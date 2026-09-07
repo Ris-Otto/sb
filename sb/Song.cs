@@ -19,11 +19,11 @@ public sealed class Song : IEquatable<Song>
     public const double DEFAULT_TEXTWIDTH = 0.475;//\textwidth
     public const double DEFAULT_HSPACE = 0.05;//\textwidth
 
-    public Song(string title, string melody, string path, string? composer = null, string? score = null, LatexFormattingOption format = LatexFormattingOption.Book) {
+    public Song(string title, string? melody, string path, string? composer = null, string? score = null, LatexFormattingOption format = LatexFormattingOption.Book) {
         Song temp = SongTextFormatter.ParseTextFile(path);
         
         this.title = temp.title??title;
-        this.melody = temp.melody??melody;
+        this.melody = temp.melody??melody??"Egen";
         
         lyrics = temp.lyrics;
         paragraphs = temp.paragraphs;

@@ -100,7 +100,11 @@ internal static class Program
         
         
         appendChapterCommand.SetHandler((chapterName, document, songTitle, songMelody, text) => {
-
+            if (songTitle is null)
+            {
+                Console.WriteLine("Song title is required");
+                return;
+            }
             if (File.Exists(text)) {
                 LatexPage page = new (songTitle, songMelody, text, null, null);
                 Document.AppendToChapter(document, chapterName, page);

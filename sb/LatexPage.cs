@@ -20,7 +20,7 @@ internal sealed class LatexPage
 
     public LatexPage(
 	    string title, 
-	    string melody,
+	    string? melody,
 	    string path, 
 	    string? scorePath,
 	    string? composer) {
