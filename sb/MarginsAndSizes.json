@@ -1,0 +1,15 @@
+﻿{
+  "margins_mm": {
+    "side_margins": 10.2,
+    "top_margin": 10.0,
+    "bottom_margin": 16.5
+  },
+  "sizes_mm": {
+    "textheight" : 252,
+    "textwidth": 195,
+    "header_vspace": 8.5,
+    "minipage_width_percent": 0.475,
+    "fontsize": 4.218,
+    "baselineskip": 5.0616
+  }
+}
