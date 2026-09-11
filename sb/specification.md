@@ -1,6 +1,7 @@
 ﻿# SB - Sångblad specification
 
 This is the initial document which functions as the source of truth for the project. Subject to change.
+SB is built with C#, .NET 10
 
 ## 1 Goal
 
@@ -225,3 +226,6 @@ examples
 
 `sb config set margin 0.4in`
 
+## 3 Testing
+
+Testing happens via XUnit. Files for testing are found in the /Tests folder.
