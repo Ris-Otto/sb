@@ -20,6 +20,7 @@ public sealed class Database : IDisposable
         {
             connection.Open();
             var database = new Database(connection);
+            database.EnforceForeignKeys();
             database.EnsureSchema();
             return database;
         }
@@ -28,6 +29,15 @@ public sealed class Database : IDisposable
             connection.Dispose();
             throw;
         }
+    }
+
+    private void EnforceForeignKeys()
+    {
+        // Microsoft.Data.Sqlite already defaults this to on, unlike raw SQLite; set explicitly so
+        // the referential-integrity guarantee (FR-1.7.x) doesn't depend on an undocumented default.
+        using var command = Connection.CreateCommand();
+        command.CommandText = "PRAGMA foreign_keys = ON;";
+        command.ExecuteNonQuery();
     }
 
     private void EnsureSchema()
@@ -43,13 +53,15 @@ public sealed class Database : IDisposable
             CREATE TABLE IF NOT EXISTS chapters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 document_id INTEGER NOT NULL REFERENCES documents (id),
-                name TEXT NOT NULL
+                name TEXT NOT NULL,
+                UNIQUE (document_id, name)
             );
             CREATE TABLE IF NOT EXISTS songs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chapter_id INTEGER NOT NULL REFERENCES chapters (id),
                 title TEXT NOT NULL,
-                number INTEGER NOT NULL
+                number INTEGER NOT NULL,
+                UNIQUE (chapter_id, title)
             );
             """;
         command.ExecuteNonQuery();

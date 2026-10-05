@@ -42,6 +42,15 @@ public class SongTests
     }
 
     [Test]
+    public void Create_TitleWithIllegalFilesystemCharacter_Fails()
+    {
+        var result = Song.Create("../etc/passwd", SampleText, 1);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Validation));
+    }
+
+    [Test]
     public void Create_EmptyText_Fails()
     {
         var result = Song.Create("Lille Albin", [], 1);

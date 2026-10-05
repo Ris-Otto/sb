@@ -4,10 +4,12 @@ namespace Sb.Core.Storage;
 
 public sealed class DocumentsRepository(Database database)
 {
-    private const int SqliteConstraintViolation = 19; // SQLITE_CONSTRAINT
-
     public Result<long> Insert(string filename, string path)
     {
+        Result nameValidity = NameValidator.Validate(filename);
+        if (nameValidity.IsFailure)
+            return Result<long>.Failure(nameValidity.Error!);
+
         try
         {
             using var command = database.Connection.CreateCommand();
@@ -17,7 +19,7 @@ public sealed class DocumentsRepository(Database database)
             command.Parameters.AddWithValue("$path", path);
             return Result<long>.Success((long)command.ExecuteScalar()!);
         }
-        catch (SqliteException ex) when (ex.SqliteErrorCode == SqliteConstraintViolation)
+        catch (SqliteException ex) when (ex.SqliteExtendedErrorCode == SqliteErrorCodes.ConstraintUnique)
         {
             return Result<long>.Failure(
                 new Error(ErrorKind.Conflict, $"A document named '{filename}' already exists.", filename));
@@ -25,6 +27,50 @@ public sealed class DocumentsRepository(Database database)
         catch (SqliteException ex)
         {
             return Result<long>.Failure(new Error(ErrorKind.Storage, ex.Message));
+        }
+    }
+
+    public Result<DocumentRecord> GetByFilename(string filename)
+    {
+        using var command = database.Connection.CreateCommand();
+        command.CommandText = "SELECT id, filename, path FROM documents WHERE filename = $filename;";
+        command.Parameters.AddWithValue("$filename", filename);
+        using var reader = command.ExecuteReader();
+
+        if (!reader.Read())
+            return Result<DocumentRecord>.Failure(
+                new Error(ErrorKind.NotFound, $"No document named '{filename}' was found.", filename));
+
+        return Result<DocumentRecord>.Success(
+            new DocumentRecord(reader.GetInt64(0), reader.GetString(1), reader.GetString(2)));
+    }
+
+    public Result Rename(long id, string newFilename)
+    {
+        Result nameValidity = NameValidator.Validate(newFilename);
+        if (nameValidity.IsFailure)
+            return nameValidity;
+
+        try
+        {
+            using var command = database.Connection.CreateCommand();
+            command.CommandText = "UPDATE documents SET filename = $filename WHERE id = $id;";
+            command.Parameters.AddWithValue("$filename", newFilename);
+            command.Parameters.AddWithValue("$id", id);
+            int rowsAffected = command.ExecuteNonQuery();
+
+            return rowsAffected > 0
+                ? Result.Success()
+                : Result.Failure(new Error(ErrorKind.NotFound, $"No document with id {id} was found."));
+        }
+        catch (SqliteException ex) when (ex.SqliteExtendedErrorCode == SqliteErrorCodes.ConstraintUnique)
+        {
+            return Result.Failure(
+                new Error(ErrorKind.Conflict, $"A document named '{newFilename}' already exists.", newFilename));
+        }
+        catch (SqliteException ex)
+        {
+            return Result.Failure(new Error(ErrorKind.Storage, ex.Message));
         }
     }
 

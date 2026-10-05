@@ -73,19 +73,19 @@ instead of inventing synthetic ones.
 
 ## Milestone 3 — Name validation (FR-1.8.6, FR-1.8.7, FR-1.8.8)
 
-- [ ] **3.1** Name sanitization: reject names containing path separators (`/`, `\`), `..` segments, or other
+- [x] **3.1** Name sanitization: reject names containing path separators (`/`, `\`), `..` segments, or other
   filesystem-illegal characters, with a structured validation error (not silent stripping).
   - **Tests**: valid plain names pass; names with `/`, `\`, `..`, `:`, null bytes, and empty string are all
     rejected with a distinguishable error per case.
 
-- [ ] **3.2** Scoped uniqueness checks: document name unique across all documents; chapter name unique within its
+- [x] **3.2** Scoped uniqueness checks: document name unique across all documents; chapter name unique within its
   document; song title unique within its chapter. Apply on `create`/`add`/`rename` (FR-1.8.6).
   - **Tests**: creating a second document with an existing name is rejected; adding a duplicate chapter name to the
     *same* document is rejected but the *same* chapter name in a *different* document is allowed; duplicate song
     title within one chapter is rejected, same title across two chapters is allowed; renaming a document to an
     already-taken name is rejected (covers the `rename` gap fixed in the spec).
 
-- [ ] **3.3** Existence checks: any lookup by document/chapter/song name that finds nothing returns a structured
+- [x] **3.3** Existence checks: any lookup by document/chapter/song name that finds nothing returns a structured
   "not found" result naming what was looked up (FR-1.8.7).
   - **Tests**: each of document/chapter/song lookup-by-name returns a not-found result (not an exception, not a
     silent null) when given a name that doesn't exist.

@@ -20,8 +20,9 @@ public sealed class Song
     public static Result<Song> Create(
         string title, IReadOnlyList<string> text, int number, string? writer = null, string? melody = null)
     {
-        if (string.IsNullOrWhiteSpace(title))
-            return Result<Song>.Failure(new Error(ErrorKind.Validation, "A song must have a title."));
+        Result titleValidity = NameValidator.Validate(title);
+        if (titleValidity.IsFailure)
+            return Result<Song>.Failure(titleValidity.Error!);
         if (text is null || text.Count == 0)
             return Result<Song>.Failure(new Error(ErrorKind.Validation, "A song must have text.", title));
         if (number < 1)
