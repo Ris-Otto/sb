@@ -6,7 +6,7 @@ obj/
 *.userosscache
 *.sln.docstates
 publish/
-chat-export.md
+
 
 # IDE
 .vs/
