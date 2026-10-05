@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="Resources\template-main.tex" />
+      <!-- PageMetrics.png is a one-time reference image for a developer to read margin/geometry values
+           off of (spec §4.1, FR-1.12.4) and hard-code; nothing reads it at runtime, so it's kept as a
+           plain file rather than embedded into the shipped assembly. -->
+      <None Include="Resources\PageMetrics.png" />
+    </ItemGroup>
+
+</Project>

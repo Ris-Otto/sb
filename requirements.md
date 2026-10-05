@@ -79,7 +79,7 @@ in the song file.
 ### 1.6 Storage — songs
 
 - FR-1.6.1: Songs shall be stored as `.yml` files, containing title, writer, melody, number, and text (ordered lines).
-- FR-1.6.2: Song `.yml` files shall be parsed when `sb document build` is invoked.
+- FR-1.6.2: Song `.yml` files shall be parsed when `sb documents build` is invoked.
 
 ### 1.7 Storage — database as source of truth
 

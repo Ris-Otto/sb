@@ -90,7 +90,7 @@ Each document is stored in its own folder. Chapters are stored in a subfolder, /
 Songs are stored in the chapter folder. Documents and chapters are stored as .tex-files.
 
 #### 2.4.2 Songs
-The songs are stored as .yml-files, which are then later parsed when `sb document build` is called.
+The songs are stored as .yml-files, which are then later parsed when `sb documents build` is called.
 The .yml for a song looks like this:
 ```
 - title: {--title}

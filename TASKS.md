@@ -13,7 +13,7 @@ instead of inventing synthetic ones.
 
 ## Milestone 0 — Solution architecture (NFR-2.2.1)
 
-- [ ] **0.1** Split the solution into three projects: `Sb.Core` (class library — all domain logic), `Sb.Cli`
+- [x] **0.1** Split the solution into three projects: `Sb.Core` (class library — all domain logic), `Sb.Cli`
   (console app, `OutputType=Exe`, references `Sb.Core` + `System.CommandLine`), `Sb.Tests` (NUnit, references
   `Sb.Core`). The CLI project must contain no domain logic — only argument parsing and translating `Sb.Core`
   results into exit codes/console output (NFR-2.2.2).
@@ -27,7 +27,7 @@ instead of inventing synthetic ones.
   - **Tests**: none yet (structural task) — but confirm `dotnet test` runs (even with zero tests) and
     `dotnet build` succeeds for all three projects before moving on.
 
-- [ ] **0.2** Define the front-end-agnostic result contract (NFR-2.2.2): a `Result`/`Result<T>` type (or a small
+- [x] **0.2** Define the front-end-agnostic result contract (NFR-2.2.2): a `Result`/`Result<T>` type (or a small
   hierarchy of typed exceptions — pick one approach) that every `Sb.Core` public operation returns/throws, carrying
   enough structured information (error kind, message, offending name) for a front-end to react to. `Sb.Cli` maps
   this to process exit codes (0 = success; reserve distinct non-zero ranges for validation errors, not-found

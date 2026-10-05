@@ -1,4 +1,4 @@
-﻿namespace sb;
+﻿namespace Sb.Cli;
 
 public class Program
 {
