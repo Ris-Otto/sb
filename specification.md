@@ -76,7 +76,11 @@ Essentially, the goal of the space-efficient algorithm is to need to insert as l
 ### 2.3 Numbering
 
 SB should assign a number to each song in a document, either in the order
-they were given or in a specified order given by the user
+they were given or in a specified order given by the user.
+
+Numbers stay contiguous automatically: deleting a song shifts every later song's number down by one, and adding or
+moving a song to an explicit position shifts every song from that position onward up by one. A song's number is
+therefore always its current sequential position, not an independently stable identifier.
 
 ### 2.4 Storage
 
@@ -92,13 +96,11 @@ The .yml for a song looks like this:
 - title: {--title}
 - writer: {--writer}
 - melody: {--melody}
-- number: {--singing-number}
+- number: {--number}
 - text:
   - {line 1}
   - ...
   - {line N}
-- score: #Optional
-  - {score_filename}
 ```
 
 The document and chapter the song belongs to is inferred, since the songs is stored inside the chapter-folder
@@ -109,7 +111,12 @@ Since files and folders may be saved wherever the user wants, the database shoul
 If a file or folder isn't where the database says it is, inform user about the mismatch. The database should contain:
 "documents": path to the maindocument folder, document filename, internal id.
 "chapters": chapter name, document id, internal id.                                                                     
-"songs": song name, song number, chapter id, internal id
+"songs": song title, song number, chapter id, internal id
+
+Mismatches of this kind are only expected to arise from changes made outside of SB. Any structural operation SB
+itself performs (`create`, `add`, `rename`, `delete`, ...) must update the filesystem and the database together as
+a single atomic step: if either half fails, the whole operation is rolled back so no orphaned file/folder or
+dangling database row is left behind as a direct result of SB's own actions.
 
 
 
@@ -123,6 +130,21 @@ When the CLI parses a file path, that path should be parsed as UTF-8, even if th
 doesn't.
 
 All commands' flags/options should have an abbreviated alias
+
+Deleting a document or chapter cascades: it also deletes the chapters/songs (and files) it contains. Since this is
+destructive and irreversible, `delete` must ask for confirmation before cascading into a non-empty document/chapter
+(or accept a `--force`/`-f` flag to skip the prompt, e.g. for scripting).
+
+Names (document/chapter/song) must be unique within their scope (a document's name among all documents, a
+chapter's name within its document, a song's title within its chapter). `create`/`add`/`rename` must reject a name
+that already exists in that scope with a clear error, rather than silently disambiguating or allowing the duplicate.
+
+Any command that references a document/chapter name or song title which does not exist must fail with a clear error
+naming what wasn't found, rather than failing silently or no-op'ing.
+
+Since document/chapter names and song titles are used directly as folder/file names on disk, `create`/`add`/`rename`
+must validate names against a safe character set and reject (with a clear error) any name containing path
+separators, `..` segments, or other filesystem-illegal characters, rather than silently sanitizing them.
 
 The following list describes the interface. The fields marked 'Required' should be command arguments, the others
 flags
@@ -138,12 +160,7 @@ flags
 
 5. A user can `delete` a song from a chapter, and a chapter from a document
 
-6. A user can `replace` a song in a chapter. When replacing a song, the new song
-   will have the same cardinal number as the song replaced, meaning it will either
-   be in the same place in the document and/or have the same number in the index and before
-   its title
-
-CLI arguments like 'document name' or 'chapter name' are inferred if working directory is a
+CLI arguments like 'document-name' or 'chapter name' are inferred if working directory is a
 document/chapter directory.
 
 #### 2.5.1 `documents`
@@ -156,6 +173,11 @@ document/chapter directory.
 - `rename`, renames the document and its repository
 - `build`, builds the document, calculating the placement of the songs. This is the main function
   of the program.
+
+`build` writes LaTeX source only (the main document and its chapter `.tex` files) to the output folder; it does
+not itself invoke a LaTeX engine to compile a PDF. The build pipeline should be structured so that an optional
+compilation step (e.g. shelling out to `pdflatex`/`xelatex`) could be added later without becoming a required
+dependency now.
 
 flags or arguments (`create`):
 
@@ -172,11 +194,12 @@ flags or arguments (`list`):
 
 flags or args (`delete`):
 
-- document name. Required
+- document-name. Required
+- force === skip the confirmation prompt when cascading into a non-empty document (alias `-f`)
 
 flags or args (`rename`):
 
-- document_name. Required
+- document-name. Required
 - new_name. Required
 
 flags or args (`build`):
@@ -195,7 +218,7 @@ flags or args (`build`):
 
 flags or arguments (`add`):
 
-- document_name. Required
+- document-name. Required
 
 - name === the name of the file ( default {document}\_chp\_{n} )
 
@@ -203,13 +226,15 @@ flags or arguments (`add`):
 
 flags or arguments(`delete`):
 
-- document_name. Required
+- document-name. Required
 
 - comma separated list of chapters to delete. Required
 
+- force === skip the confirmation prompt when cascading into a non-empty chapter (alias `-f`)
+
 flags or arguments (`list`):
 
-- document_name. Required
+- document-name. Required
 
 - songs === lists songs under chapters as well
 
@@ -219,7 +244,6 @@ flags or arguments (`list`):
 - `delete`
 - `list`
 - `modify`
-- `replace`, replaces a song in a chapter, keeping its cardinal number (see item 6, §2.5). Flags/arguments TBD.
 
 flags or arguments (`add`):
 
@@ -228,27 +252,29 @@ flags or arguments (`add`):
 - writer === the name of the writer of the song text. Visible in the LaTeX output
 - text === the text of the song. Required. May be given as literal text, or as a path to an
   existing file, whose contents are then used as the song's text.
+- number === the song's position/number in the chapter. If omitted, the song is assigned the next
+  sequential number. If given an existing position, the songs from that position onward shift up by one (§2.3).
 
 flags or arguments (`delete`):
 
-- document name
-- song name
+- document-name. Required
+- song title. Required
 
 flags or arguments (`list`):
 
-- document name. Required
+- document-name. Required
 - chapter name
 
 flags or arguments (`modify`):
 
-- document name. Required
-- song name. Required
+- document-name. Required
+- song title. Required
 - One (or more) of
     - title
     - writer
     - melody
     - chapter
-    - ordinal number
+    - number
 
 ## 3 Testing
 
@@ -278,3 +304,47 @@ Songs are contained in minipages, which act like columns.
 Each song has atleast a title, and that title is a LaTeX 
 `\paragraph*{{name}}`. The text of the song is then inserted under
 the title as free text.
+
+### 4.4 Encoding
+
+SB does not assume or hard-code a particular LaTeX engine. The generated `.tex` source must be compiled with a
+UTF-8-capable setup (e.g. XeLaTeX/LuaLaTeX, or pdfLaTeX with `inputenc`/`fontenc`) in order to render Swedish
+characters (å, ä, ö) correctly — this is a requirement on the user's own LaTeX toolchain, not something SB
+detects or enforces.
+
+## 5 Quality attributes
+
+SB has two primary stakeholders: the **developer** building and maintaining it, and the **end user** creating
+leaflets with it. The following attributes are prioritized for those two audiences.
+
+### 5.1 Maintainability
+
+SB's core behaviour — ordering, numbering, layout calculation, storage/database access, and LaTeX generation —
+must not be architecturally locked to the CLI. It shall be implemented as a CLI-independent core, with the CLI
+acting as one interchangeable front-end over it, so that another interface (GUI, web API, etc.) could be added
+later by consuming the same core, without rewriting core logic.
+
+The core must report success/failure to whatever front-end is consuming it via a structured result (or typed
+exceptions), not via anything CLI-specific (e.g. writing straight to stdout/stderr or calling `Environment.Exit`
+directly). The CLI front-end translates that structured result into process exit codes and console output; a
+future GUI or API front-end would translate the same result differently.
+
+### 5.2 Usability
+
+End users should not need to retype information already inferable from context (e.g. the working directory), and
+common flags should be quick to type (abbreviated aliases, §2.5).
+
+### 5.3 Portability
+
+SB should run wherever .NET 10 runs, and should correctly handle non-ASCII (UTF-8) content and paths regardless of
+the host system's own encoding.
+
+### 5.4 Reliability
+
+The database must remain trustworthy even if files/folders are moved by the user outside of SB; any mismatch must
+be surfaced to the user, not silently fixed or ignored (§2.4.3). Output must faithfully preserve the user's song
+text and line breaks (§2.1).
+
+### 5.5 Performance efficiency
+
+Space-efficient layout calculation (§2.2) must stay tractable (polynomial, not factorial) as song counts grow.
