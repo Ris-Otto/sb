@@ -37,17 +37,17 @@ instead of inventing synthetic ones.
 
 ## Milestone 1 — Domain model & song file I/O (FR-1.6, FR-1.4)
 
-- [ ] **1.1** `Song` model: `Title`, `Writer?`, `Melody?`, `Number`, `IReadOnlyList<string> Text`. (FR-1.6.1 — no
+- [x] **1.1** `Song` model: `Title`, `Writer?`, `Melody?`, `Number`, `IReadOnlyList<string> Text`. (FR-1.6.1 — no
   `Score` field.)
   - **Tests**: construction/validation tests (e.g. title required, text required).
 
-- [ ] **1.2** YAML (de)serialization for `Song` matching the `.yml` shape in spec §2.4.2 (`title`, `writer`,
+- [x] **1.2** YAML (de)serialization for `Song` matching the `.yml` shape in spec §2.4.2 (`title`, `writer`,
   `melody`, `number`, `text` as a line list). (FR-1.6.1, FR-1.6.2)
   - **Tests**: round-trip a `Song` through serialize→deserialize and assert equality; deserialize a hand-written
     fixture `.yml` (add one to `Sb.Tests/TestFiles/`) and assert field values; deserialize malformed YAML and assert
     a structured error (not an unhandled exception) is returned (ties to NFR-2.5.2's "fail clearly" principle).
 
-- [ ] **1.3** Contiguous renumbering logic (FR-1.4.3): given an ordered list of songs and an insertion/deletion at
+- [x] **1.3** Contiguous renumbering logic (FR-1.4.3): given an ordered list of songs and an insertion/deletion at
   position `p`, shift every song's `Number` at/after `p` by ±1.
   - **Tests**: insert at start/middle/end/append; delete at start/middle/end/only-element; insert with no explicit
     position (append, gets `max+1`); deleting the last song doesn't throw on an empty list afterward.

@@ -35,5 +35,5 @@ public sealed class Result<T> : Result
     private Result(bool isSuccess, T? value, Error? error) : base(isSuccess, error) => _value = value;
 
     public static Result<T> Success(T value) => new(true, value, null);
-    public static new Result<T> Failure(Error error) => new(false, default, error);
+    public new static Result<T> Failure(Error error) => new(false, default, error);
 }

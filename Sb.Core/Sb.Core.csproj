@@ -7,6 +7,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="YamlDotNet" Version="16.2.1" />
+    </ItemGroup>
+
+    <ItemGroup>
       <EmbeddedResource Include="Resources\template-main.tex" />
       <!-- PageMetrics.png is a one-time reference image for a developer to read margin/geometry values
            off of (spec §4.1, FR-1.12.4) and hard-code; nothing reads it at runtime, so it's kept as a
