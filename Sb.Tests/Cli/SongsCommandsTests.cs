@@ -1,0 +1,171 @@
+using System.CommandLine;
+using System.CommandLine.Invocation;
+using NUnit.Framework;
+using Sb.Cli;
+using Sb.Core;
+using Sb.Core.Documents;
+using Sb.Core.Storage;
+
+namespace Sb.Tests.Cli;
+
+[TestFixture]
+public class SongsCommandsTests
+{
+    private string _outputFolder = null!;
+    private Database _db = null!;
+    private RootCommand _root = null!;
+    private StringWriter _output = null!;
+    private StringWriter _error = null!;
+    private InvocationConfiguration _config = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _outputFolder = Path.Combine(Path.GetTempPath(), "sb-songs-cli-tests-" + Guid.NewGuid());
+        Directory.CreateDirectory(_outputFolder);
+        _db = Database.Open("Data Source=:memory:");
+        _root = new RootCommand("test");
+        _root.Subcommands.Add(SongsCommands.Build(new SongOperations(_db)));
+        _output = new StringWriter();
+        _error = new StringWriter();
+        _config = new InvocationConfiguration { Output = _output, Error = _error };
+
+        // Seed a document + chapter via their real operation classes, same as a user would.
+        new DocumentOperations(_db).Create("my-doc", "Title", null, _outputFolder);
+        new ChapterOperations(_db).Add("my-doc", "chapter-1", null);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _db.Dispose();
+        if (Directory.Exists(_outputFolder))
+            Directory.Delete(_outputFolder, recursive: true);
+    }
+
+    private int Run(params string[] args) => _root.Parse(args).Invoke(_config);
+
+    private string ChapterFolder => Path.Combine(_outputFolder, "my-doc", "Chapters", "chapter-1");
+
+    // --- add (9.1) ---
+
+    [Test]
+    public void Add_HappyPath_ExitsZero_CreatesSongFile()
+    {
+        int exitCode = Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Lille Albin.yml")), Is.True);
+    }
+
+    [Test]
+    public void Add_RequiredFieldsArePositionalArguments_NotFlags()
+    {
+        int exitCode = Run("songs", "add", "--document-name", "my-doc", "--title", "Lille Albin");
+
+        Assert.That(exitCode, Is.Not.EqualTo(0));
+    }
+
+    [Test]
+    public void Add_WithOptionalFlags_StoresThem()
+    {
+        int exitCode = Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1", "-w", "Okänd", "-m", "Trad.");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        var song = SongYamlSerializer.Deserialize(File.ReadAllText(Path.Combine(ChapterFolder, "Lille Albin.yml"))).Value;
+        Assert.That(song.Writer, Is.EqualTo("Okänd"));
+        Assert.That(song.Melody, Is.EqualTo("Trad."));
+    }
+
+    [Test]
+    public void Add_DuplicateTitle_ExitsWithConflictCode()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 2");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Conflict)));
+    }
+
+    [Test]
+    public void Add_NonexistentChapter_ExitsWithNotFoundCode()
+    {
+        int exitCode = Run("songs", "add", "my-doc", "ghost-chapter", "Title", "text");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.NotFound)));
+    }
+
+    // --- delete (9.2) ---
+
+    [Test]
+    public void Delete_ExistingSong_ExitsZero_RemovesFile()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = Run("songs", "delete", "my-doc", "Lille Albin");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Lille Albin.yml")), Is.False);
+    }
+
+    [Test]
+    public void Delete_NonexistentSong_ExitsWithNotFoundCode()
+    {
+        int exitCode = Run("songs", "delete", "my-doc", "Ghost Song");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.NotFound)));
+    }
+
+    // --- list (9.3) ---
+
+    [Test]
+    public void List_NoSongs_ExitsZero_PrintsNoSongs()
+    {
+        int exitCode = Run("songs", "list", "my-doc");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(_output.ToString(), Does.Contain("No songs"));
+    }
+
+    [Test]
+    public void List_WithChapterFilter_PrintsOnlyThatChaptersSongs()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = Run("songs", "list", "my-doc", "-c", "chapter-1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(_output.ToString(), Does.Contain("Lille Albin"));
+    }
+
+    // --- modify (9.4) ---
+
+    [Test]
+    public void Modify_Title_ExitsZero_RenamesFile()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Old Title", "rad 1");
+
+        int exitCode = Run("songs", "modify", "my-doc", "Old Title", "-t", "New Title");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "New Title.yml")), Is.True);
+    }
+
+    [Test]
+    public void Modify_NoFlagsGiven_ExitsWithValidationCode()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = Run("songs", "modify", "my-doc", "Lille Albin");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+    }
+
+    [Test]
+    public void Modify_NonexistentSong_ExitsWithNotFoundCode()
+    {
+        int exitCode = Run("songs", "modify", "my-doc", "Ghost", "-t", "New");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.NotFound)));
+    }
+}

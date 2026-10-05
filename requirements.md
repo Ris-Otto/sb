@@ -22,9 +22,9 @@ be split across a column boundary except as allowed by the overflow caveats in o
 space before starting a new page.
 - FR-1.2.6: Only the final page of a chapter may be left partially empty; all other pages must be filled with available 
 song content.
-- FR-1.2.7: SB shall add `\vspace` to the end of the shorter column so that both columns on a page start at the same 
-line, augmenting LaTeX minipages' automatic vertical middle-alignment. This is a cosmetic correction, not the primary 
-space-filling mechanism.
+- FR-1.2.7: SB shall render each column as a top-aligned minipage (LaTeX's `[t]` position), so both columns on a page 
+start at the same line, and shall add `\vspace` to the end of the shorter column so both columns also end at the same 
+line. This is a cosmetic correction, not the primary space-filling mechanism.
 - FR-1.2.8: SB shall not attempt to detect or reflow musical phrasing; each input line shall map to exactly one 
 output line.
 - FR-1.2.9: SB shall break a single output line across multiple output lines only when it is too wide for the column; 
@@ -58,6 +58,13 @@ the chapter), SB shall use the best achievable fill for that page rather than er
 algorithm.
 - FR-1.3.14: The underlying goal of the space-efficient algorithm is to minimize the amount of `\vspace` needed to 
 cosmetically align columns (FR-1.2.7); the 95%-fill target (FR-1.3.10) is a means to that end, not an end in itself.
+- FR-1.3.15: When a song is too long to fit within a single page's two columns combined, FR-1.3.6's even-page 
+restriction is moot: the song shall continue onto as many further pages as needed, regardless of each page's 
+parity, since no alternative placement exists.
+- FR-1.3.16: Whenever a song's content is split across a page boundary (FR-1.3.5 or FR-1.3.15), SB shall ensure a 
+continuation notice is shown to the reader, marking both where the song breaks off and where it resumes. A split 
+from column 1 to column 2 within the same page (FR-1.3.4) requires no such notice, since both halves are visible 
+on the same page at once.
 
 ### 1.4 Numbering
 
@@ -86,8 +93,12 @@ in the song file.
 - FR-1.7.1: SB shall maintain a database for fast lookup of documents, chapters, and songs, independent of where 
 files/folders physically reside.
 - FR-1.7.2: The database's `documents` records shall contain: path to the main document folder, document filename, 
-internal id.
-- FR-1.7.3: The database's `chapters` records shall contain: chapter name, document id, internal id.
+display title, subtitle, internal id. The display title/subtitle are persisted (not just baked once into the 
+generated `.tex`) so that `documents build` (FR-1.9.5) can regenerate the main document from the database alone, 
+without re-parsing previously generated LaTeX (gap found implementing Milestone 7).
+- FR-1.7.3: The database's `chapters` records shall contain: chapter name, display title, document id, internal id, 
+for the same reason as FR-1.7.2 — `documents build` needs each chapter's display title to regenerate its `.tex` 
+(FR-1.12.5).
 - FR-1.7.4: The database's `songs` records shall contain: song title, song number, chapter id, internal id.
 - FR-1.7.5: If a file or folder is not found at the path recorded in the database, SB shall inform the user of the 
 mismatch rather than failing silently or guessing.
@@ -145,10 +156,11 @@ songs under each chapter.
 
 ### 1.11 CLI — `songs`
 
-- FR-1.11.1: `songs add` shall add a song, requiring title and text 
-(text may be literal or a path to a file whose contents are used), with optional melody, writer, and number 
-(`--number`). If number is omitted, the song shall be assigned the next sequential number (FR-1.4.3); if 
-given an existing position, later songs shall shift up by one.
+- FR-1.11.1: `songs add` shall add a song to a given document and chapter (both required — every song belongs to a 
+chapter per FR-1.5.3, so these cannot be omitted the way they're missing from the original flag list; gap found 
+implementing Milestone 9), requiring title and text (text may be literal or a path to a file whose contents are 
+used), with optional melody, writer, and number (`--number`). If number is omitted, the song shall be assigned the 
+next sequential number (FR-1.4.3); if given an existing position, later songs shall shift up by one.
 - FR-1.11.2: `songs delete` shall delete a song, given a required document name and required song title.
 - FR-1.11.3: `songs list` shall list songs, given a required document name and optional chapter name filter.
 - FR-1.11.4: `songs modify` shall update one or more of a song's title, writer, melody, chapter, or number, 
@@ -170,6 +182,10 @@ given a required document name and song title.
 Swedish characters (å, ä, ö) depends on the user compiling with a UTF-8-capable setup (e.g. XeLaTeX/LuaLaTeX, or 
 pdfLaTeX with `inputenc`/`fontenc`); this is a documented requirement on the user's toolchain, not something SB 
 detects or enforces.
+- FR-1.12.10: When a song's rendered content ends with more continuing on a later page, SB shall insert a 
+continuation marker (e.g. "(continued)") at the end of that fragment; when a song's rendered content resumes from 
+an earlier page, SB shall insert a corresponding marker (e.g. "(continued from previous page)") at its start 
+(FR-1.3.16).
 
 ## 2 Non-functional requirements (quality attributes)
 
@@ -204,6 +220,9 @@ restructuring the core ordering/numbering/layout/generation logic.
 name, for consistency and faster interactive use.
 - NFR-2.3.2 (Argument inference): CLI argument inference (document/chapter name from working directory) shall reduce 
 required typing for common in-directory usage without removing the ability to specify names explicitly.
+- NFR-2.3.3 (Reader clarity on page-spanning songs): When a song's content is split across a page boundary, SB shall 
+provide a continuation notice so the reader isn't left thinking the song ended abruptly partway through 
+(FR-1.3.16, FR-1.12.10).
 
 ### 2.4 Portability (developer, end user)
 
@@ -223,9 +242,9 @@ than silently reconciling or ignoring them. This principle extends to user input
 never a silent no-op or a guessed correction.
 - NFR-2.5.3 (Fidelity to user input): Output formatting shall preserve the user's intended line breaks and content; 
 SB shall not silently drop, truncate, or reflow text for musical/semantic reasons.
-- NFR-2.5.4 (Layout correctness): The overflow caveats (a song may overflow column 1→2, and on odd pages only column 
-2→next page; never on even pages) shall hold for both ordering modes, so that leaflets remain valid for double-sided 
-printing/binding.
+- NFR-2.5.4 (Layout correctness): The overflow caveats (a song may overflow column 1→2; on odd pages, column 2→next 
+page; never on even pages, unless the song itself spans more than one page, FR-1.3.15) shall hold for both ordering 
+modes, so that leaflets remain valid for double-sided printing/binding.
 - NFR-2.5.5 (Portability of storage): Since users may relocate document/chapter/song files and folders freely on disk, 
 SB's lookup mechanism (the database) shall not assume a fixed filesystem location beyond what it has recorded.
 - NFR-2.5.6 (Atomicity): SB-driven structural operations (FR-1.7.6) shall be atomic with respect to the filesystem and 

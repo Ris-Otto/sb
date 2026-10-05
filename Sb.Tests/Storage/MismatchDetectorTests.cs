@@ -10,7 +10,7 @@ public class MismatchDetectorTests
     public void FindDocumentMismatches_PathDoesNotExist_ReportsMismatchWithNameAndPath()
     {
         string missingPath = Path.Combine(Path.GetTempPath(), "sb-ghost-" + Guid.NewGuid());
-        var record = new DocumentRecord(1, "ghost", missingPath);
+        var record = new DocumentRecord(1, "ghost", missingPath, "Ghost", null);
 
         var mismatches = MismatchDetector.FindDocumentMismatches([record]);
 
@@ -26,7 +26,7 @@ public class MismatchDetectorTests
         Directory.CreateDirectory(tempDir);
         try
         {
-            var record = new DocumentRecord(1, "real", tempDir);
+            var record = new DocumentRecord(1, "real", tempDir, "Real", null);
 
             var mismatches = MismatchDetector.FindDocumentMismatches([record]);
 

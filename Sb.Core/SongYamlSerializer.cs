@@ -10,6 +10,11 @@ public static class SongYamlSerializer
     private static readonly ISerializer Serializer = new SerializerBuilder()
         .WithNamingConvention(LowerCaseNamingConvention.Instance)
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        // Force every scalar to be quoted (NFR-2.5.3): an unquoted plain scalar that happens to be
+        // whitespace-only, or that looks like a YAML literal (null, true, 42, ...), gets reinterpreted
+        // as that literal on deserialize instead of the literal text — silently corrupting a lyric
+        // line without forced quoting.
+        .WithDefaultScalarStyle(ScalarStyle.DoubleQuoted)
         .Build();
 
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()

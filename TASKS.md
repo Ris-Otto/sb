@@ -112,17 +112,17 @@ instead of inventing synthetic ones.
 
 ## Milestone 5 — Ordering (FR-1.3)
 
-- [ ] **5.1** As-listed ordering: place songs in the user-given order, applying the overflow caveats (FR-1.3.2,
+- [x] **5.1** As-listed ordering: place songs in the user-given order, applying the overflow caveats (FR-1.3.2,
   FR-1.3.4–FR-1.3.7).
   - **Tests**: a list of songs that fits one page exactly; a list that overflows column 1→2 on an odd page vs. must
     start a fresh page on an even page (FR-1.3.6) — use real fixture lyrics of known line counts.
 
-- [ ] **5.2** First-Fit-Decreasing fast path (FR-1.3.12): sort remaining songs longest-first, greedily add while
+- [x] **5.2** First-Fit-Decreasing fast path (FR-1.3.12): sort remaining songs longest-first, greedily add while
   they fit; return whether the 95% target (FR-1.3.10) was met.
   - **Tests**: a case where FFD alone reaches ≥95% (exact-fit-ish fixture set); a case where it doesn't (so the
     exact search in 5.3 is expected to run next).
 
-- [ ] **5.3** Exact subset-sum / bounded-knapsack search (FR-1.3.11): given remaining song heights and a capacity,
+- [x] **5.3** Exact subset-sum / bounded-knapsack search (FR-1.3.11): given remaining song heights and a capacity,
   find the subset maximizing total height ≤ capacity.
   - **Tests**: a small hand-crafted set with a known optimal subset (verify against a brute-force reference
     computed in the test itself, not hard-coded, to avoid the test just re-asserting the implementation); confirm
@@ -132,63 +132,86 @@ instead of inventing synthetic ones.
     completes quickly — this is the regression guard for NFR-2.6.1 (no accidental reintroduction of factorial
     behavior).
 
-- [ ] **5.4** Per-page orchestration: longest-song-first placement (FR-1.3.8), then FFD (5.2) with fallback to
+- [x] **5.4** Per-page orchestration: longest-song-first placement (FR-1.3.8), then FFD (5.2) with fallback to
   exact search (5.3) per page, repeating until all songs are placed (FR-1.3.9).
   - **Tests**: a multi-page chapter (using the full `TestFiles` fixture set) produces the expected number of pages
     and the expected per-page song groupings; verify every page but the last meets the 95% target.
 
+- [x] **5.5** Page-spanning continuation metadata (FR-1.3.15, FR-1.3.16): when a song is too long to fit within a
+  single page's two columns combined, FR-1.3.6's even-page restriction is moot — it continues onto as many further
+  pages as needed regardless of parity. This is already true behaviorally after the bug-fix round following M5's
+  review (`ColumnFiller`'s oversized-candidate handling and `SpaceEfficientPaginator`'s carry-over fix don't check
+  page parity), but isn't yet asserted against this specific requirement, and `SongFragment` doesn't yet expose
+  *whether* a given split crossed a page boundary (vs. just column 1→2 within one page) — Milestone 6 needs that
+  distinction to know when a continuation notice (FR-1.3.16) is required.
+  - Extend `SongFragment`/`SongSplitter` with that page-vs-column distinction (e.g. flags on the fragment, set by
+    whichever caller performs the split: `ColumnFiller`'s own column 1→2 split is always same-page;
+    `ColumnFiller`'s too-long-for-either-column excess and `Paginator`/`SpaceEfficientPaginator`'s cross-page splits
+    are always page-boundary).
+  - **Tests**: a song spanning 3+ pages, with at least one transition landing on an even page, continues correctly
+    (extends the oversized-carry-over regression test from the M5 review); fragments from a page-boundary split are
+    flagged as such; fragments from a column 1→2 split (same page) are not.
+
 ## Milestone 6 — LaTeX generation (FR-1.12)
 
-- [ ] **6.1** `DocumentTemplate` class: builds the main `.tex` file from `template-main.tex`, injecting document
+- [x] **6.1** `DocumentTemplate` class: builds the main `.tex` file from `template-main.tex`, injecting document
   metadata (title, subtitle) at creation time and inserting a chapter reference each time one is added (FR-1.12.1–
   FR-1.12.3).
   - **Tests**: a newly created document's generated `.tex` contains the given title/subtitle; adding a chapter
     inserts exactly one new reference to it without disturbing previously added chapters.
 
-- [ ] **6.2** Page metrics: apply the A4 page size and margins from `PageMetrics.png` as fixed LaTeX preamble
+- [x] **6.2** Page metrics: apply the A4 page size and margins from `PageMetrics.png` as fixed LaTeX preamble
   settings (FR-1.12.4).
   - **Tests**: generated preamble contains the expected geometry settings (string/regex match is fine here).
 
-- [ ] **6.3** Chapter emission: `\chapter*{<title>}` (unnumbered), never `\chapter{<title>}` (FR-1.12.5).
+- [x] **6.3** Chapter emission: `\chapter*{<title>}` (unnumbered), never `\chapter{<title>}` (FR-1.12.5).
   - **Tests**: generated chapter `.tex` uses `\chapter*{...}` with the chapter's display title substituted, and
     never emits the numbered form.
 
-- [ ] **6.4** Song emission: each song in a minipage column, title as `\paragraph*{<title>}`, body as free text
+- [x] **6.4** Song emission: each song in a minipage column, title as `\paragraph*{<title>}`, body as free text
   beneath it (FR-1.12.6–FR-1.12.8), using the column/page placement from Milestone 5.
   - **Tests**: a song's generated LaTeX contains `\paragraph*{<its title>}` followed by its exact text lines
     (byte-for-byte, to guard NFR-2.5.3's fidelity requirement — no reflowing); two songs placed in the same page
     both appear inside `minipage` environments.
 
-- [ ] **6.5** No hard-coded LaTeX engine (FR-1.12.9): confirm the generated source doesn't depend on
+- [x] **6.5** No hard-coded LaTeX engine (FR-1.12.9): confirm the generated source doesn't depend on
   engine-specific packages (e.g. `fontspec`, which requires XeLaTeX/LuaLaTeX) without the user opting in; document
   the UTF-8-compilation requirement in generated output (e.g. a comment in the `.tex` preamble) rather than
   enforcing it in code.
   - **Tests**: a snapshot/regression test asserting the preamble doesn't silently start requiring a specific engine
     as the template evolves.
 
+- [x] **6.6** Continuation notices (FR-1.3.16, FR-1.12.10, NFR-2.3.3): when rendering a song fragment flagged (via
+  5.5) as ending with more content on a later page, append a continuation marker (e.g. "(continued)"); when
+  rendering a fragment flagged as resuming from an earlier page, prepend a corresponding marker (e.g. "(continued
+  from previous page)"). No marker for a plain column 1→2 split within the same page.
+  - **Tests**: a song split across pages renders both markers on the correct fragments; a song split only across
+    columns (same page) renders neither marker; marker text is clearly separate from the song's own lyric lines
+    (not mistaken for fidelity-protected content under NFR-2.5.3).
+
 ## Milestone 7 — CLI: `documents` (FR-1.9)
 
-- [ ] **7.1** `documents create --name --title [--subtitle] [--output-folder]`: creates the document folder, main
+- [x] **7.1** `documents create <name> <title> [--subtitle] [--output-folder]`: creates the document folder, main
   `.tex` (via Milestone 6), and DB row atomically (Milestone 2.2); applies name validation (Milestone 3).
   - **Tests** (integration-level, against a temp directory + temp DB): happy path creates folder+file+DB row;
     duplicate name rejected; invalid name rejected; every flag has a working short alias (FR-1.8.3/NFR-2.3.1).
 
-- [ ] **7.2** `documents list [-c] [-s]`: lists documents, optionally with chapters/songs nested.
+- [x] **7.2** `documents list [-c] [-s]`: lists documents, optionally with chapters/songs nested.
   - **Tests**: empty DB → empty list, not an error; `-c` includes chapter names; `-c -s` groups songs under
     chapters (FR-1.9.2).
 
-- [ ] **7.3** `documents delete --document-name [--force/-f]`: cascades to chapters/songs/files (FR-1.8.5),
+- [x] **7.3** `documents delete <document-name> [--force/-f]`: cascades to chapters/songs/files (FR-1.8.5),
   prompting for confirmation unless `--force` is given.
   - **Tests**: deleting a non-empty document without `--force` is blocked pending confirmation (simulate the
     prompt in-process rather than via real stdin); `--force` skips the prompt and cascades fully; deleting a
     nonexistent document returns a not-found result (Milestone 3.3), not a crash.
 
-- [ ] **7.4** `documents rename --document-name --new-name`: renames folder/file and DB row atomically; subject to
+- [x] **7.4** `documents rename <document-name> <new-name>`: renames folder/file and DB row atomically; subject to
   the same uniqueness/sanitization rules as `create` (the gap fixed in the spec review).
   - **Tests**: happy path; renaming to an already-taken name is rejected; renaming a nonexistent document is
     rejected.
 
-- [ ] **7.5** `documents build --document-name [--ordering] [--format]`: wires Milestone 5 (ordering) and Milestone
+- [x] **7.5** `documents build <document-name> [--ordering] [--format]`: wires Milestone 5 (ordering) and Milestone
   6 (LaTeX generation) together; writes `.tex` source only, no PDF compilation (FR-1.9.6).
   - **Tests**: end-to-end test using the real `TestFiles` fixtures — build a small multi-song, multi-page document
     and assert the output `.tex` files exist and are well-formed; `--ordering as-listed` vs `--ordering
@@ -197,39 +220,41 @@ instead of inventing synthetic ones.
 
 ## Milestone 8 — CLI: `chapters` (FR-1.10)
 
-- [ ] **8.1** `chapters add --document-name [--name] [--title]`: default name pattern `{document}_chp_{n}`
+- [x] **8.1** `chapters add <document-name> [--name] [--title]`: default name pattern `{document}_chp_{n}`
   (FR-1.10.1).
   - **Tests**: default name generation produces a non-colliding name even after chapters have been added and
     deleted (counter doesn't naively reuse a freed number into a collision); explicit name/title both work;
     duplicate name within the same document rejected.
 
-- [ ] **8.2** `chapters delete --document-name --chapters <comma-separated> [--force/-f]`: cascades to songs
+- [x] **8.2** `chapters delete <document-name> <chapters (comma-separated)> [--force/-f]`: cascades to songs
   (FR-1.10.2).
   - **Tests**: deleting multiple chapters in one call; deleting a non-empty chapter without `--force` blocked;
     deleting a chapter that doesn't exist in that document reported as not-found rather than silently skipped.
 
-- [ ] **8.3** `chapters list --document-name [--songs]`.
+- [x] **8.3** `chapters list <document-name> [--songs]`.
   - **Tests**: as in 7.2, but chapter-scoped.
 
 ## Milestone 9 — CLI: `songs` (FR-1.11)
 
-- [ ] **9.1** `songs add --title --text [--melody] [--writer] [--number]`: `--text` accepts literal text or a file
-  path (reuse `TestFiles/*.txt` fixtures for the file-path case); `--number` omitted → next sequential, given →
-  shifts later songs up (FR-1.11.1, FR-1.4.3).
+- [x] **9.1** `songs add <document-name> <chapter-name> <title> <text> [--melody] [--writer] [--number]`: every song
+  belongs to a chapter (FR-1.5.3), so `document-name`/`chapter-name` are required even though they were missing from
+  the original flag list (gap fixed during implementation, mirroring FR-1.9.1's title/subtitle gap from Milestone 7).
+  `text` accepts literal text or a file path (reuse `TestFiles/*.txt` fixtures for the file-path case); `--number`
+  omitted → next sequential, given → shifts later songs up (FR-1.11.1, FR-1.4.3).
   - **Tests**: literal text vs. file-path text produce identical stored content; omitting `--number` assigns
     `max+1`; an explicit `--number` in the middle shifts existing songs correctly (reuse Milestone 1.3's logic —
     this test is about the CLI wiring, not re-testing the shift algorithm itself); duplicate title in the same
     chapter rejected.
 
-- [ ] **9.2** `songs delete --document-name --song-title`: no cascade (songs have no children), but still
+- [x] **9.2** `songs delete <document-name> <song-title>`: no cascade (songs have no children), but still
   triggers renumbering of later songs (FR-1.4.3).
   - **Tests**: deleting a middle song shifts later numbers down by one; deleting a nonexistent song title reported
     as not-found.
 
-- [ ] **9.3** `songs list --document-name [--chapter-name]`.
+- [x] **9.3** `songs list <document-name> [--chapter-name]`.
   - **Tests**: unfiltered vs. chapter-filtered listing.
 
-- [ ] **9.4** `songs modify --document-name --song-title [--title] [--writer] [--melody] [--chapter] [--number]`
+- [x] **9.4** `songs modify <document-name> <song-title> [--title] [--writer] [--melody] [--chapter] [--number]`
   (one or more of the optional fields).
   - **Tests**: modifying only one field leaves the others untouched; modifying `--number` triggers the same
     shift semantics as `add` with an explicit number; modifying `--chapter` moves the song's file and DB row

@@ -1,0 +1,173 @@
+using NUnit.Framework;
+using Sb.Core;
+
+namespace Sb.Tests.Core;
+
+[TestFixture]
+public class SongSplitterTests
+{
+    private const int ColumnWidth = 1000; // generous enough that no line ever wraps
+
+    private static Song MakeSong(int textLines) =>
+        Song.Create("Title", Enumerable.Range(1, textLines).Select(i => $"line {i}").ToArray(), 1).Value;
+
+    [Test]
+    public void Split_FitsEntirely_ReturnsWholeFragmentNoRest()
+    {
+        Song song = MakeSong(textLines: 4); // height 5
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth);
+
+        Assert.That(first, Is.EqualTo(fragment));
+        Assert.That(remainder, Is.Null);
+    }
+
+    [Test]
+    public void Split_NoRoomForTitle_ReturnsNullBoth()
+    {
+        Song song = MakeSong(textLines: 4);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 0, ColumnWidth);
+
+        Assert.That(first, Is.Null);
+        Assert.That(remainder, Is.Null);
+    }
+
+    [Test]
+    public void Split_PartialFit_FirstFragmentIncludesTitleAndFittingLines()
+    {
+        Song song = MakeSong(textLines: 6); // height 7: title + 6 lines
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+
+        Assert.That(first, Is.Not.Null);
+        Assert.That(first!.IncludesTitle, Is.True);
+        Assert.That(first.Lines, Is.EqualTo(new[] { "line 1", "line 2" }));
+        Assert.That(first.Height, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Split_PartialFit_RestFragmentHasRemainingLinesNoTitle()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (_, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+
+        Assert.That(remainder, Is.Not.Null);
+        Assert.That(remainder!.IncludesTitle, Is.False);
+        Assert.That(remainder.Lines, Is.EqualTo(new[] { "line 3", "line 4", "line 5", "line 6" }));
+        Assert.That(remainder.Height, Is.EqualTo(4));
+    }
+
+    [Test]
+    public void Split_PartialFit_NoLinesLostAcrossFirstAndRest()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+
+        var reassembled = first!.Lines.Concat(remainder!.Lines).ToArray();
+        Assert.That(reassembled, Is.EqualTo(song.Text));
+    }
+
+    [Test]
+    public void Split_PartialFit_BothFragmentsReferenceSameSong()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+
+        Assert.That(first!.Song, Is.SameAs(song));
+        Assert.That(remainder!.Song, Is.SameAs(song));
+    }
+
+    [Test]
+    public void Split_TitleOnlyFits_FirstFragmentHasNoLines()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 1, ColumnWidth);
+
+        Assert.That(first, Is.Not.Null);
+        Assert.That(first!.Lines, Is.Empty);
+        Assert.That(first.Height, Is.EqualTo(1));
+        Assert.That(remainder!.Lines, Is.EqualTo(song.Text));
+    }
+
+    [Test]
+    public void Split_ContinuationFragment_SplitsAgainWithoutReintroducingTitle()
+    {
+        // A fragment that's already a continuation (no title) can itself be split further
+        // (e.g. a song spanning three pages) — it must never gain a title back.
+        var continuation = new SongFragment(MakeSong(6), IncludesTitle: false, ["line 3", "line 4", "line 5", "line 6"], Height: 4);
+
+        var (first, remainder) = SongSplitter.Split(continuation, availableLines: 2, ColumnWidth);
+
+        Assert.That(first!.IncludesTitle, Is.False);
+        Assert.That(first.Lines, Is.EqualTo(new[] { "line 3", "line 4" }));
+        Assert.That(remainder!.IncludesTitle, Is.False);
+        Assert.That(remainder.Lines, Is.EqualTo(new[] { "line 5", "line 6" }));
+    }
+
+    [Test]
+    public void Split_ColumnBoundary_NeitherFragmentFlaggedAsPageContinuation()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth, isPageBoundary: false);
+
+        Assert.That(first!.ContinuesOnNextPage, Is.False);
+        Assert.That(remainder!.ContinuesFromPreviousPage, Is.False);
+    }
+
+    [Test]
+    public void Split_PageBoundary_FirstFlaggedContinuesOnNextPage_RemainderFlaggedContinuesFromPreviousPage()
+    {
+        Song song = MakeSong(textLines: 6);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth, isPageBoundary: true);
+
+        Assert.That(first!.ContinuesOnNextPage, Is.True);
+        Assert.That(remainder!.ContinuesFromPreviousPage, Is.True);
+        Assert.That(remainder.ContinuesOnNextPage, Is.False, "not yet known whether it will need a further split");
+    }
+
+    [Test]
+    public void Split_NoActualSplitOccurs_ContinuesOnNextPageStaysFalse_EvenIfPageBoundaryRequested()
+    {
+        Song song = MakeSong(textLines: 4);
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth, isPageBoundary: true);
+
+        Assert.That(first, Is.EqualTo(fragment));
+        Assert.That(first!.ContinuesOnNextPage, Is.False);
+        Assert.That(remainder, Is.Null);
+    }
+
+    [Test]
+    public void Split_AlreadyContinuingFragment_PreservesContinuesFromPreviousPage_WhenSplitAgain()
+    {
+        // A fragment landing at the top of a page (already flagged) that itself needs to split
+        // further (e.g. spans a third page) must keep its "continues from previous page" flag.
+        Song song = MakeSong(textLines: 6);
+        var landing = new SongFragment(
+            song, IncludesTitle: false, ["line 3", "line 4", "line 5", "line 6"], Height: 4,
+            ContinuesFromPreviousPage: true);
+
+        var (first, remainder) = SongSplitter.Split(landing, availableLines: 2, ColumnWidth, isPageBoundary: true);
+
+        Assert.That(first!.ContinuesFromPreviousPage, Is.True, "still resumes from the earlier page");
+        Assert.That(first.ContinuesOnNextPage, Is.True, "and now also continues onto yet another page");
+        Assert.That(remainder!.ContinuesFromPreviousPage, Is.True);
+    }
+}

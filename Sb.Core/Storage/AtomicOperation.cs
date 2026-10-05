@@ -57,6 +57,43 @@ public static class AtomicOperation
         }
     }
 
+    /// <summary>
+    /// The delete-shaped counterpart to <see cref="Execute"/> (FR-1.7.6, FR-1.8.5): the database row
+    /// is removed first, since a transactional DB delete is cheaply "undone" by simply not having
+    /// happened (nothing runs after it on failure); the filesystem is cleaned up last, since a
+    /// recursive folder delete has no cheap undo. If that last step throws, the database is already
+    /// consistent on its own — the failure is reported as a best-effort cleanup problem rather than
+    /// rolled back.
+    /// </summary>
+    public static Result ExecuteDelete(Func<Result> databaseAction, Action filesystemCleanup)
+    {
+        Result dbResult;
+        try
+        {
+            dbResult = databaseAction();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure(new Error(ErrorKind.Storage, $"Database delete failed: {ex.Message}"));
+        }
+
+        if (dbResult.IsFailure)
+            return dbResult;
+
+        try
+        {
+            filesystemCleanup();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure(new Error(ErrorKind.Storage,
+                $"Removed from the database, but the filesystem cleanup failed: {ex.Message} — manual cleanup " +
+                "may be required."));
+        }
+
+        return Result.Success();
+    }
+
     private static Error RollBack(ReversibleAction filesystem, Error originalError)
     {
         try

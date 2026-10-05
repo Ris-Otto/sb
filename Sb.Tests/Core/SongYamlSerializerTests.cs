@@ -28,6 +28,26 @@ public class SongYamlSerializerTests
         Assert.That(roundTripped.Text, Is.EqualTo(original.Text));
     }
 
+    [TestCase("\t")]
+    [TestCase("null")]
+    [TestCase("true")]
+    [TestCase("42")]
+    [TestCase("~")]
+    [TestCase("   ")]
+    public void RoundTrip_LineLooksLikeAYamlLiteralOrIsWhitespaceOnly_PreservedAsLiteralText(string line)
+    {
+        // A plain (unquoted) YAML scalar that looks like null/a bool/a number, or that's pure
+        // whitespace, gets reinterpreted as that literal on deserialize instead of as text —
+        // silently corrupting the lyric line (NFR-2.5.3) unless scalars are always quoted.
+        var original = Song.Create("Title", ["before", line, "after"], 1).Value;
+
+        string yaml = SongYamlSerializer.Serialize(original);
+        var result = SongYamlSerializer.Deserialize(yaml);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Value.Text[1], Is.EqualTo(line));
+    }
+
     [Test]
     public void RoundTrip_OmittedWriterAndMelody_StayNull()
     {

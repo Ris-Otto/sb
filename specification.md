@@ -23,11 +23,11 @@ Multi-column formatting is achieved via LaTeX minipages. Columns are filled sequ
 many whole songs as fit. When using space-efficient ordering, a later, shorter song is preferred
 to fill any remaining column space on a page before moving on to a new page — only a chapter's
 final page may be left partially empty, since no further song content exists to fill it (2026-09-28
-update). Whatever small residual gap remains after that is corrected cosmetically by adding
-`\vspace` to the end of the shorter column — vertical alignment is a finishing touch, not the
-primary mechanism for using available space. The purpose of the vertical alignment is to have the two 
-columns on a page start at the same line - LaTeX minipages automatically middle-align vertically, and this
-is one way to augment that.
+update). Columns are typeset as top-aligned minipages (LaTeX's `[t]` position), so both already
+start at the same line. Whatever small residual gap remains after filling is corrected cosmetically
+by adding `\vspace` to the end of the shorter column, so both columns also *end* at the same line —
+vertical alignment is a finishing touch for a level-looking page, not the primary mechanism for
+using available space.
 
 SB does not try to detect musical phrasing. The user's own line breaks are trusted as-is: one
 input line becomes one output line. The only exception is a line too wide for the column
@@ -40,6 +40,17 @@ A few caveats to the ordering:
  - Songs may overflow from the first column to the second column.
  - On an ODD page (left-side page in the leaflet), a song may overflow from the second column to the next page.
  - This should never happen on an EVEN page (right-side page in the leaflet).
+
+These caveats describe the normal case, where a song could otherwise be moved whole to the next page instead of
+being split. When a song is long enough that it doesn't fit within a single page's two columns combined, the
+even-page restriction is moot: there is no alternative placement, so the song continues onto as many further pages
+as it needs, regardless of each page's parity.
+
+Whenever a song's content is split across a page boundary — whether because of the odd-page caveat above or
+because the song itself spans multiple pages — a continuation notice must be shown to the reader (e.g. a short
+marker where the song breaks off, and another where it resumes), so the break doesn't read as the song simply
+ending partway through. A song splitting from column 1 to column 2 within the same page needs no such notice,
+since both halves are visible on the same page at once.
 
 Two ways to order the songs:
  - As listed by the user
@@ -247,6 +258,8 @@ flags or arguments (`list`):
 
 flags or arguments (`add`):
 
+- document-name. Required
+- chapter-name. Required
 - title === the **display** title of the song. Visible in the LaTeX-output. Required
 - melody === the melody of the song. Visible in the LaTeX-output
 - writer === the name of the writer of the song text. Visible in the LaTeX output
@@ -304,6 +317,11 @@ Songs are contained in minipages, which act like columns.
 Each song has atleast a title, and that title is a LaTeX 
 `\paragraph*{{name}}`. The text of the song is then inserted under
 the title as free text.
+
+When a song's content is split across a page boundary (§2.2), a continuation notice is inserted: one marker at the
+end of the fragment that breaks off (e.g. "(continued)"), and another at the start of the fragment that resumes
+(e.g. "(continued from previous page)"). No notice is needed when a song only splits from column 1 to column 2
+within the same page.
 
 ### 4.4 Encoding
 

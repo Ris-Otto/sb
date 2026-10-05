@@ -90,7 +90,7 @@ public class AtomicOperationTests
         using var db = Database.Open("Data Source=:memory:");
         var repository = new DocumentsRepository(db);
 
-        Result<long> result = AtomicOperation.Execute(CreateFolder(), () => repository.Insert("my-doc", _tempDir));
+        Result<long> result = AtomicOperation.Execute(CreateFolder(), () => repository.Insert("my-doc", _tempDir, "My Doc"));
 
         Assert.That(result.IsSuccess, Is.True);
         Assert.That(Directory.Exists(_tempDir), Is.True);
@@ -108,12 +108,57 @@ public class AtomicOperationTests
     {
         using var db = Database.Open("Data Source=:memory:");
         var repository = new DocumentsRepository(db);
-        repository.Insert("my-doc", "/already/exists");
+        repository.Insert("my-doc", "/already/exists", "My Doc");
 
-        Result<long> result = AtomicOperation.Execute(CreateFolder(), () => repository.Insert("my-doc", _tempDir));
+        Result<long> result = AtomicOperation.Execute(CreateFolder(), () => repository.Insert("my-doc", _tempDir, "My Doc"));
 
         Assert.That(result.IsFailure, Is.True);
         Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Conflict));
         Assert.That(Directory.Exists(_tempDir), Is.False);
+    }
+
+    [Test]
+    public void ExecuteDelete_DatabaseActionFails_FilesystemCleanupNeverRuns()
+    {
+        bool cleanupRan = false;
+        var error = new Error(ErrorKind.NotFound, "no such document");
+
+        Result result = AtomicOperation.ExecuteDelete(() => Result.Failure(error), () => cleanupRan = true);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error, Is.EqualTo(error));
+        Assert.That(cleanupRan, Is.False);
+    }
+
+    [Test]
+    public void ExecuteDelete_BothSucceed_ReturnsSuccess()
+    {
+        using var db = Database.Open("Data Source=:memory:");
+        var repository = new DocumentsRepository(db);
+        long id = repository.Insert("my-doc", _tempDir, "My Doc").Value;
+        Directory.CreateDirectory(_tempDir);
+
+        Result result = AtomicOperation.ExecuteDelete(
+            () => repository.Delete(id), () => Directory.Delete(_tempDir, recursive: true));
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(Directory.Exists(_tempDir), Is.False);
+        Assert.That(repository.GetByFilename("my-doc").IsFailure, Is.True);
+    }
+
+    [Test]
+    public void ExecuteDelete_FilesystemCleanupThrows_DatabaseChangeIsNotRolledBack()
+    {
+        using var db = Database.Open("Data Source=:memory:");
+        var repository = new DocumentsRepository(db);
+        long id = repository.Insert("my-doc", _tempDir, "My Doc").Value;
+
+        Result result = AtomicOperation.ExecuteDelete(
+            () => repository.Delete(id), filesystemCleanup: () => throw new IOException("simulated cleanup failure"));
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Storage));
+        Assert.That(result.Error!.Message, Does.Contain("simulated cleanup failure"));
+        Assert.That(repository.GetByFilename("my-doc").IsFailure, Is.True, "the database delete already committed");
     }
 }

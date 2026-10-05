@@ -12,10 +12,12 @@
       <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
       <PackageReference Include="NUnit" Version="3.13.3" />
       <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+      <PackageReference Include="System.CommandLine" Version="2.0.0" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\Sb.Core\Sb.Core.csproj" />
+      <ProjectReference Include="..\Sb.Cli\Sb.Cli.csproj" />
     </ItemGroup>
 
     <ItemGroup>

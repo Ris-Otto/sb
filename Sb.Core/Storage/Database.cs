@@ -48,17 +48,20 @@ public sealed class Database : IDisposable
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT NOT NULL UNIQUE,
-                path TEXT NOT NULL
+                path TEXT NOT NULL,
+                title TEXT NOT NULL,
+                subtitle TEXT
             );
             CREATE TABLE IF NOT EXISTS chapters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                document_id INTEGER NOT NULL REFERENCES documents (id),
+                document_id INTEGER NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
+                title TEXT NOT NULL,
                 UNIQUE (document_id, name)
             );
             CREATE TABLE IF NOT EXISTS songs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chapter_id INTEGER NOT NULL REFERENCES chapters (id),
+                chapter_id INTEGER NOT NULL REFERENCES chapters (id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 number INTEGER NOT NULL,
                 UNIQUE (chapter_id, title)

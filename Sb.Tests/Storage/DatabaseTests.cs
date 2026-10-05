@@ -35,7 +35,7 @@ public class DatabaseTests
     {
         using var db = Database.Open("Data Source=:memory:");
 
-        AssertTableColumns(db, "documents", "id", "filename", "path");
+        AssertTableColumns(db, "documents", "id", "filename", "path", "title", "subtitle");
     }
 
     [Test]
@@ -43,7 +43,7 @@ public class DatabaseTests
     {
         using var db = Database.Open("Data Source=:memory:");
 
-        AssertTableColumns(db, "chapters", "id", "document_id", "name");
+        AssertTableColumns(db, "chapters", "id", "document_id", "name", "title");
     }
 
     [Test]
