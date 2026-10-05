@@ -7,15 +7,18 @@ namespace Sb.Cli;
 
 /// <summary>Builds the `songs` command group (FR-1.11): thin argument parsing and result-to-exit-
 /// code/console translation only — all behavior lives in <see cref="SongOperations"/>
-/// (NFR-2.2.1/2.2.2).</summary>
+/// (NFR-2.2.1/2.2.2). Only `list` supports working-directory inference (FR-1.8.4) for document-name —
+/// it's the only subcommand where document-name is the sole positional argument; `add`/`delete`/
+/// `modify` each have another required positional right after it, which rules them out (see
+/// <see cref="DocumentNameResolution"/>).</summary>
 public static class SongsCommands
 {
-    public static Command Build(SongOperations operations)
+    public static Command Build(SongOperations operations, Database database)
     {
         var songs = new Command("songs", "Manage songs within a document");
         songs.Subcommands.Add(BuildAdd(operations));
         songs.Subcommands.Add(BuildDelete(operations));
-        songs.Subcommands.Add(BuildList(operations));
+        songs.Subcommands.Add(BuildList(operations, database));
         songs.Subcommands.Add(BuildModify(operations));
         return songs;
     }
@@ -70,9 +73,13 @@ public static class SongsCommands
         return command;
     }
 
-    private static Command BuildList(SongOperations operations)
+    private static Command BuildList(SongOperations operations, Database database)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document to list songs in." };
+        var documentName = new Argument<string?>("document-name")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The document to list songs in. Inferred if omitted and run from inside a document's folder."
+        };
         var chapterName = new Option<string?>("--chapter-name", "-c") { Description = "Only list songs in this chapter." };
 
         var command = new Command("list", "List songs in a document.");
@@ -80,8 +87,12 @@ public static class SongsCommands
         command.Options.Add(chapterName);
         command.SetAction(parseResult =>
         {
+            Result<string> documentNameResult = DocumentNameResolution.Resolve(parseResult.GetValue(documentName), database);
+            if (documentNameResult.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, documentNameResult.Error!);
+
             Result<IReadOnlyList<SongEntry>> result =
-                operations.List(parseResult.GetValue(documentName)!, parseResult.GetValue(chapterName));
+                operations.List(documentNameResult.Value, parseResult.GetValue(chapterName));
 
             if (result.IsFailure)
                 return CommandReporting.ReportFailure(parseResult, result.Error!);

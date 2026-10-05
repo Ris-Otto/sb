@@ -10,18 +10,26 @@ namespace Sb.Cli;
 /// (NFR-2.2.1/2.2.2).</summary>
 public static class ChaptersCommands
 {
-    public static Command Build(ChapterOperations operations, Func<string, bool> confirm)
+    public static Command Build(ChapterOperations operations, Database database, Func<string, bool> confirm)
     {
         var chapters = new Command("chapters", "Manage chapters within a document");
-        chapters.Subcommands.Add(BuildAdd(operations));
+        chapters.Subcommands.Add(BuildAdd(operations, database));
         chapters.Subcommands.Add(BuildDelete(operations, confirm));
-        chapters.Subcommands.Add(BuildList(operations));
+        chapters.Subcommands.Add(BuildList(operations, database));
         return chapters;
     }
 
-    private static Command BuildAdd(ChapterOperations operations)
+    // `add` and `list` have document-name as their only positional argument, so working-directory
+    // inference (FR-1.8.4) applies cleanly there (see DocumentNameResolution). `delete` has a second
+    // required positional (the chapter list) right after it, which System.CommandLine can't parse
+    // unambiguously if document-name were also optional, so it stays required there.
+    private static Command BuildAdd(ChapterOperations operations, Database database)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document to add the chapter to." };
+        var documentName = new Argument<string?>("document-name")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The document to add the chapter to. Inferred if omitted and run from inside a document's folder."
+        };
         var name = new Option<string?>("--name", "-n")
         {
             Description = "The chapter's name (used as its folder/file name). Defaults to {document}_chp_{n}."
@@ -37,8 +45,12 @@ public static class ChaptersCommands
         command.Options.Add(title);
         command.SetAction(parseResult =>
         {
+            Result<string> documentNameResult = DocumentNameResolution.Resolve(parseResult.GetValue(documentName), database);
+            if (documentNameResult.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, documentNameResult.Error!);
+
             Result<ChapterRecord> result = operations.Add(
-                parseResult.GetValue(documentName)!, parseResult.GetValue(name), parseResult.GetValue(title));
+                documentNameResult.Value, parseResult.GetValue(name), parseResult.GetValue(title));
 
             return CommandReporting.Report(parseResult, result, record => $"Created chapter '{record.Name}'.");
         });
@@ -82,9 +94,13 @@ public static class ChaptersCommands
         return command;
     }
 
-    private static Command BuildList(ChapterOperations operations)
+    private static Command BuildList(ChapterOperations operations, Database database)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document to list chapters in." };
+        var documentName = new Argument<string?>("document-name")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The document to list chapters in. Inferred if omitted and run from inside a document's folder."
+        };
         var songs = new Option<bool>("--songs", "-s") { Description = "Include each chapter's songs." };
 
         var command = new Command("list", "List chapters in a document.");
@@ -92,8 +108,12 @@ public static class ChaptersCommands
         command.Options.Add(songs);
         command.SetAction(parseResult =>
         {
+            Result<string> documentNameResult = DocumentNameResolution.Resolve(parseResult.GetValue(documentName), database);
+            if (documentNameResult.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, documentNameResult.Error!);
+
             Result<IReadOnlyList<ChapterListing>> result =
-                operations.List(parseResult.GetValue(documentName)!, parseResult.GetValue(songs));
+                operations.List(documentNameResult.Value, parseResult.GetValue(songs));
 
             if (result.IsFailure)
                 return CommandReporting.ReportFailure(parseResult, result.Error!);

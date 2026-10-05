@@ -43,7 +43,7 @@ public class DocumentsCommandsTests
     private void BuildRoot(Func<string, bool> confirm)
     {
         _root = new RootCommand("test");
-        _root.Subcommands.Add(DocumentsCommands.Build(new DocumentOperations(_db), confirm));
+        _root.Subcommands.Add(DocumentsCommands.Build(new DocumentOperations(_db), _db, confirm));
     }
 
     private int Run(params string[] args) => _root.Parse(args).Invoke(_config);
@@ -156,6 +156,68 @@ public class DocumentsCommandsTests
 
         Assert.That(exitCode, Is.Not.EqualTo(0));
         Assert.That(Directory.Exists(Path.Combine(_outputFolder, "my-doc")), Is.True);
+    }
+
+    [Test]
+    public void Delete_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        // Deliberately doesn't use --force and declines the prompt: actually deleting the document
+        // would delete the process's own current directory out from under it, which Windows refuses
+        // (an OS-level constraint unrelated to inference — the same thing happens typing the document
+        // name explicitly from inside its own folder). Reaching the confirmation prompt at all already
+        // proves inference resolved "my-doc" correctly, since a failed resolution would exit with a
+        // Validation error before ever getting there.
+        Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
+        SeedChapter("my-doc");
+        _confirmResponse = false;
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("documents", "delete");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(_output.ToString(), Does.Contain("Aborted"));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Delete_DocumentNameOmitted_CwdOutsideAnyDocument_ExitsWithValidationCode()
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_outputFolder);
+        try
+        {
+            int exitCode = Run("documents", "delete");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Build_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("documents", "build");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
     }
 
     [Test]

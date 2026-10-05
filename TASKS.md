@@ -263,17 +263,33 @@ instead of inventing synthetic ones.
 
 ## Milestone 10 — Cross-cutting polish
 
-- [ ] **10.1** Working-directory argument inference (FR-1.8.4): running a command inside a document/chapter folder
-  infers `--document-name`/`--chapter` instead of requiring it.
+- [x] **10.1** Working-directory argument inference (FR-1.8.4): running a command inside a document/chapter folder
+  infers document-name instead of requiring it. Only applies to `documents delete`/`build`, `chapters add`/`list`,
+  and `songs list` — the commands where document-name is the *only* positional argument. System.CommandLine has no
+  way to leave a leading positional unfilled when other required positionals follow it (confirmed empirically: with
+  fewer tokens than declared positions it reports a missing argument rather than skipping the optional one), so
+  `documents rename`, `chapters delete`, and `songs add`/`delete`/`modify` keep document-name required rather than
+  reshuffling their already-shipped argument order. Chapter-name inference wasn't applicable anywhere in the current
+  command set for the same reason, or because inferring it would silently change existing flag semantics (e.g.
+  `songs list --chapter-name` omitted means "no filter", not "infer from cwd").
   - **Tests**: running `songs list` with cwd inside a document folder lists that document's songs without passing
-    `--document-name`; an explicit flag still overrides the inferred value.
+    document-name; an explicit argument still overrides the inferred value; cwd outside any document with no
+    argument given is a clear Validation error. Same coverage (minus the override case) for the other four commands.
 
-- [ ] **10.2** UTF-8 path handling end-to-end (FR-1.1.2, NFR-2.4.2): names/paths containing Swedish characters
-  (å/ä/ö) survive create → list → build unchanged, regardless of console code page.
+- [x] **10.2** UTF-8 path handling end-to-end (FR-1.1.2, NFR-2.4.2): names/paths containing Swedish characters
+  (å/ä/ö) survive create → list → build unchanged, regardless of console code page. `Program.cs` now sets
+  `Console.OutputEncoding` to UTF-8 so printed output renders correctly regardless of the terminal's default code
+  page; the rest of the pipeline (file system, SQLite, YamlDotNet) already handled UTF-8 correctly with no changes
+  needed, confirmed by the round-trip test.
   - **Tests**: create a document/chapter/song with å/ä/ö in its name/title and assert it round-trips correctly
     through the DB, filesystem, and generated `.tex`.
 
-- [ ] **10.3** Exit code mapping (NFR-2.2.2): wire every `Sb.Cli` command to translate `Sb.Core` results into the
-  exit code ranges defined in Milestone 0.2.
-  - **Tests**: a process-level test (or a thin wrapper test around the CLI's entry point) asserting success,
-    validation-error, and not-found scenarios each produce their designated exit code.
+- [x] **10.3** Exit code mapping (NFR-2.2.2): wire every `Sb.Cli` command to translate `Sb.Core` results into the
+  exit code ranges defined in Milestone 0.2. Already largely in place via the `CommandReporting`/`ExitCodes`
+  abstraction shared by all three command groups since Milestone 8; also fixed a real bug this test surfaced —
+  `Program.cs`'s database connection needed `Pooling=False`, since Microsoft.Data.Sqlite's connection pool was
+  keeping the database file locked after the process's own `using` disposal, which only matters once a real
+  process-level test exercises the full entry point. Added `SB_DATA_DIR` to override the database location, both
+  for a user wanting more than one database and so tests can exercise the real CLI without touching the real one.
+  - **Tests**: a thin wrapper test around the CLI's entry point (`Program.Main`) asserting success, validation-error,
+    not-found, and conflict scenarios each produce their designated exit code.

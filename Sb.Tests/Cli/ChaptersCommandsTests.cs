@@ -33,7 +33,7 @@ public class ChaptersCommandsTests
 
         // Seed a document via the real DocumentsCommands path, same as a user would.
         var documentsRoot = new RootCommand("test");
-        documentsRoot.Subcommands.Add(DocumentsCommands.Build(new DocumentOperations(_db), _ => false));
+        documentsRoot.Subcommands.Add(DocumentsCommands.Build(new DocumentOperations(_db), _db, _ => false));
         documentsRoot.Parse(["documents", "create", "my-doc", "Title", "-o", _outputFolder])
             .Invoke(new InvocationConfiguration { Output = new StringWriter(), Error = new StringWriter() });
     }
@@ -49,7 +49,7 @@ public class ChaptersCommandsTests
     private void BuildRoot(Func<string, bool> confirm)
     {
         _root = new RootCommand("test");
-        _root.Subcommands.Add(ChaptersCommands.Build(new ChapterOperations(_db), confirm));
+        _root.Subcommands.Add(ChaptersCommands.Build(new ChapterOperations(_db), _db, confirm));
     }
 
     private int Run(params string[] args) => _root.Parse(args).Invoke(_config);
@@ -73,6 +73,41 @@ public class ChaptersCommandsTests
         int exitCode = Run("chapters", "add", "--document-name", "my-doc");
 
         Assert.That(exitCode, Is.Not.EqualTo(0));
+    }
+
+    [Test]
+    public void Add_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("chapters", "add", "--name", "chapter-1");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(Directory.Exists(ChapterFolder("chapter-1")), Is.True);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Add_DocumentNameOmitted_CwdOutsideAnyDocument_ExitsWithValidationCode()
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_outputFolder);
+        try
+        {
+            int exitCode = Run("chapters", "add");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
     }
 
     [Test]
@@ -162,6 +197,25 @@ public class ChaptersCommandsTests
 
         Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
         Assert.That(_output.ToString(), Does.Contain("No chapters"));
+    }
+
+    [Test]
+    public void List_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("chapters", "add", "my-doc", "-n", "chapter-1");
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("chapters", "list");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(_output.ToString(), Does.Contain("chapter-1"));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
     }
 
     [Test]

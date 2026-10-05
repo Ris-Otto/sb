@@ -7,17 +7,20 @@ namespace Sb.Cli;
 
 /// <summary>Builds the `documents` command group (FR-1.9): thin argument parsing and result-to-
 /// exit-code/console translation only — all behavior lives in <see cref="DocumentOperations"/>
-/// (NFR-2.2.1/2.2.2).</summary>
+/// (NFR-2.2.1/2.2.2). `delete` and `build` support working-directory inference (FR-1.8.4) for
+/// document-name, since it's their only positional argument; `create` has nothing to infer from
+/// (it's naming something new) and `rename` has a second required positional after document-name,
+/// which rules it out — see <see cref="DocumentNameResolution"/>.</summary>
 public static class DocumentsCommands
 {
-    public static Command Build(DocumentOperations operations, Func<string, bool> confirm)
+    public static Command Build(DocumentOperations operations, Database database, Func<string, bool> confirm)
     {
         var documents = new Command("documents", "Manage documents (leaflets)");
         documents.Subcommands.Add(BuildCreate(operations));
         documents.Subcommands.Add(BuildList(operations));
-        documents.Subcommands.Add(BuildDelete(operations, confirm));
+        documents.Subcommands.Add(BuildDelete(operations, database, confirm));
         documents.Subcommands.Add(BuildRename(operations));
-        documents.Subcommands.Add(BuildBuild(operations));
+        documents.Subcommands.Add(BuildBuild(operations, database));
         return documents;
     }
 
@@ -70,9 +73,13 @@ public static class DocumentsCommands
         return command;
     }
 
-    private static Command BuildDelete(DocumentOperations operations, Func<string, bool> confirm)
+    private static Command BuildDelete(DocumentOperations operations, Database database, Func<string, bool> confirm)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document to delete." };
+        var documentName = new Argument<string?>("document-name")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The document to delete. Inferred if omitted and run from inside a document's folder."
+        };
         var force = new Option<bool>("--force", "-f") { Description = "Skip the confirmation prompt." };
 
         var command = new Command("delete", "Delete a document and everything inside it.");
@@ -80,7 +87,10 @@ public static class DocumentsCommands
         command.Options.Add(force);
         command.SetAction(parseResult =>
         {
-            string name = parseResult.GetValue(documentName)!;
+            Result<string> nameResult = DocumentNameResolution.Resolve(parseResult.GetValue(documentName), database);
+            if (nameResult.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, nameResult.Error!);
+            string name = nameResult.Value;
             bool forceFlag = parseResult.GetValue(force);
 
             Result result = operations.Delete(name, forceFlag);
@@ -120,9 +130,13 @@ public static class DocumentsCommands
         return command;
     }
 
-    private static Command BuildBuild(DocumentOperations operations)
+    private static Command BuildBuild(DocumentOperations operations, Database database)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document to build." };
+        var documentName = new Argument<string?>("document-name")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "The document to build. Inferred if omitted and run from inside a document's folder."
+        };
         var ordering = new Option<string>("--ordering", "-o")
         {
             Description = "as-listed | space-efficient",
@@ -142,7 +156,10 @@ public static class DocumentsCommands
         command.Options.Add(format);
         command.SetAction(parseResult =>
         {
-            string name = parseResult.GetValue(documentName)!;
+            Result<string> nameResult = DocumentNameResolution.Resolve(parseResult.GetValue(documentName), database);
+            if (nameResult.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, nameResult.Error!);
+            string name = nameResult.Value;
             SongOrdering orderingValue = parseResult.GetValue(ordering) switch
             {
                 "space-efficient" => SongOrdering.SpaceEfficient,

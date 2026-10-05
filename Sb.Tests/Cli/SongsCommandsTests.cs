@@ -25,7 +25,7 @@ public class SongsCommandsTests
         Directory.CreateDirectory(_outputFolder);
         _db = Database.Open("Data Source=:memory:");
         _root = new RootCommand("test");
-        _root.Subcommands.Add(SongsCommands.Build(new SongOperations(_db)));
+        _root.Subcommands.Add(SongsCommands.Build(new SongOperations(_db), _db));
         _output = new StringWriter();
         _error = new StringWriter();
         _config = new InvocationConfiguration { Output = _output, Error = _error };
@@ -125,6 +125,67 @@ public class SongsCommandsTests
 
         Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
         Assert.That(_output.ToString(), Does.Contain("No songs"));
+    }
+
+    [Test]
+    public void List_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("songs", "list");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(_output.ToString(), Does.Contain("Lille Albin"));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void List_DocumentNameGivenExplicitly_OverridesWorkingDirectoryInference()
+    {
+        var documentsRoot = new RootCommand("test");
+        documentsRoot.Subcommands.Add(DocumentsCommands.Build(new DocumentOperations(_db), _db, _ => false));
+        documentsRoot.Parse(["documents", "create", "other-doc", "Other", "-o", _outputFolder])
+            .Invoke(new InvocationConfiguration { Output = new StringWriter(), Error = new StringWriter() });
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "other-doc"));
+        try
+        {
+            // cwd is inside "other-doc", but "my-doc" is given explicitly, so it must win.
+            int exitCode = Run("songs", "list", "my-doc");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(_output.ToString(), Does.Contain("Lille Albin"));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void List_DocumentNameOmitted_CwdOutsideAnyDocument_ExitsWithValidationCode()
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_outputFolder); // the output folder itself, not inside "my-doc"
+        try
+        {
+            int exitCode = Run("songs", "list");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
     }
 
     [Test]
