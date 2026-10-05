@@ -1,7 +1,9 @@
-﻿// See https://aka.ms/new-console-template for more information
+﻿namespace sb;
 
-using System.CommandLine;
-using System.Threading.Tasks;
-
-namespace sb;
-
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        
+    }
+}
