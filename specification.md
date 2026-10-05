@@ -61,6 +61,8 @@ The best-fit algorithm aims to fill 95% of the remaining space on the page. It g
 permutations for the remaining songs for each page, if `--max-permutations` is set; 
 otherwise, it goes through all possible permutations for the remaining songs.
 
+Essentially, the goal of the space-efficient algorithm is to need to insert as little \vspace{...} as possible.
+
 ### 2.3 Numbering
 
 SB should assign a number to each song in a document, either in the order
@@ -249,4 +251,20 @@ the feature, create other failing and passing tests for the features.
 The template-main.tex is there for you, the implementer, to base a class, 'DocumentTemplate', on.
 The DocumentTemplate-class builds the main file for the final document. Anytime a chapter is added to the document,
 insert it into the document. When the document is created, insert the relevant metadata - title, subtitle - into the
-document
+document.
+
+### 4.1 Page metrics
+
+The page size is A4. Specific metrics for the page, margins et c., 
+are found in PageMetrics.png.
+
+### 4.2 Chapters
+
+Chapters can be defined in two ways in LaTeX: `\chapter{{name}}` or
+`\chapter*{{name}}`. We use the latter in SB.
+
+### 4.3 Songs
+Songs are contained in minipages, which act like columns.
+Each song has atleast a title, and that title is a LaTeX 
+`\paragraph*{{name}}`. The text of the song is then inserted under
+the title as free text.

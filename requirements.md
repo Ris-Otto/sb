@@ -34,6 +34,7 @@ Derived from `specification.md`. Subject to change along with the specification.
 - FR-1.3.9: The space-efficient algorithm shall operate on a per-page basis, aiming to fill as much of both columns as possible, subject to the overflow caveats (FR-1.3.4–1.3.6).
 - FR-1.3.10: The best-fit algorithm shall aim to fill 95% of the remaining space on a page.
 - FR-1.3.11: If `--max-permutations` is set, the best-fit search shall evaluate at most that many permutations of the remaining songs per page; if unset, it defaults to `count(songs)!`, i.e. it evaluates all possible permutations of the remaining songs for that page.
+- FR-1.3.12: The underlying goal of the space-efficient algorithm is to minimize the amount of `\vspace` needed to cosmetically align columns (FR-1.2.7); the 95%-fill target (FR-1.3.10) is a means to that end, not an end in itself.
 
 ### 1.4 Numbering
 
@@ -92,9 +93,14 @@ Derived from `specification.md`. Subject to change along with the specification.
 
 ### 1.12 LaTeX document template
 
-- FR-1.12.1: SB shall provide a `DocumentTemplate` class that builds the main LaTeX file for a document.
+- FR-1.12.1: SB shall provide a `DocumentTemplate` class that builds the main LaTeX file for a document, based on a `template-main.tex` reference template.
 - FR-1.12.2: Adding a chapter to a document shall insert that chapter into the generated main document.
 - FR-1.12.3: Creating a document shall insert its metadata (title, subtitle) into the generated main document.
+- FR-1.12.4: The generated document's page size shall be A4, with margins and other page metrics as defined in `PageMetrics.png`.
+- FR-1.12.5: Chapters shall be emitted as unnumbered LaTeX chapters, using `\chapter*{name}` rather than `\chapter{name}`.
+- FR-1.12.6: Each song shall be rendered inside a minipage acting as a column.
+- FR-1.12.7: Every song shall have at least a title, emitted as a LaTeX `\paragraph*{name}` command.
+- FR-1.12.8: A song's text shall be inserted as free text directly beneath its title.
 
 ## 2 Non-functional requirements
 
