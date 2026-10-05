@@ -51,15 +51,25 @@ As listed inserts the songs as they are listed. The two caveats still apply.
 
 #### space-efficient
 
-The space-efficient algorithm selects the chapters longest song and places it first. It then searches 
-for a best-fit song for every remaining song.
-The space-efficient algorithm operates on a per-page basis. It aims to fill as much of both columns as possible. 
-The two caveats apply. Every new page starts with the longest remaining song, and then fills in the columns
-with remaining songs. 
+The space-efficient algorithm selects the chapter's longest remaining song and places it first on each new page.
+The two caveats apply. It then determines which of the remaining songs should fill out the rest of that page.
 
-The best-fit algorithm aims to fill 95% of the remaining space on the page. It goes through `--max-permutations`
-permutations for the remaining songs for each page, if `--max-permutations` is set; 
-otherwise, it goes through all possible permutations for the remaining songs.
+Since songs are placed sequentially (filling one column, then overflowing into the next per the two caveats), how
+much of the remaining page a set of songs fills depends only on which songs are chosen, not on the order they are
+tried in. Picking the best-filling set of remaining songs for a page is therefore a subset-sum / bin-covering
+problem, not a permutation search:
+
+- Each song's height is quantized to whole output lines (the same unit used for line-wrapping, §2.1).
+- The remaining songs are run through a First-Fit-Decreasing (FFD) greedy pass first: sorted longest-first, added
+  to the page while they still fit. If this already fills 95% of the remaining space, it is used as-is.
+- Otherwise, an exact subset-sum/bounded-knapsack search is run over the remaining songs against the page's
+  remaining capacity (in lines), to find the subset whose total height best fills that capacity, subject to the
+  two caveats.
+
+The best-fit result aims to fill 95% of the remaining space on the page. Because this finds the best subset
+directly, there is no permutation count to bound or tune, and no separate fallback algorithm is needed for an
+exhausted search — if the remaining songs genuinely cannot reach 95% (e.g. too few songs are left in the chapter),
+the best achievable fill for that page is used.
 
 Essentially, the goal of the space-efficient algorithm is to need to insert as little \vspace{...} as possible.
 
@@ -126,7 +136,7 @@ flags
 4. A user can `modify` some song data, like title, melody and writer, directly through
    the CLI.
 
-5. A user can `remove` a song from a chapter, and a chapter from a document
+5. A user can `delete` a song from a chapter, and a chapter from a document
 
 6. A user can `replace` a song in a chapter. When replacing a song, the new song
    will have the same cardinal number as the song replaced, meaning it will either
@@ -173,15 +183,14 @@ flags or args (`build`):
 
 - document-name. Required
 - ordering === song number-wise or by space-efficiency
-- max-permutations === default `count(songs) factorial`
- - [Ss]ingle-column | [Mm]ulti-column
+- [Ss]ingle-column | [Mm]ulti-column
 
 #### 2.5.2 `chapters`
 
 ##### 2.5.2.1 Subcommands
 
 - `add`, creates an empty chapter in a document.
-- `remove`, removes a chapter from a document
+- `delete`, deletes a chapter from a document
 - `list`, lists chapters in a document
 
 flags or arguments (`add`):
@@ -192,11 +201,11 @@ flags or arguments (`add`):
 
 - title === the **display** title of the chapter. Visible in the LaTeX-output
 
-flags or arguments(`remove`):
+flags or arguments(`delete`):
 
 - document_name. Required
 
-- comma separated list of chapters to remove. Required
+- comma separated list of chapters to delete. Required
 
 flags or arguments (`list`):
 
@@ -207,9 +216,10 @@ flags or arguments (`list`):
 #### 2.5.3 `songs`
 
 - `add`
-- `remove`
+- `delete`
 - `list`
 - `modify`
+- `replace`, replaces a song in a chapter, keeping its cardinal number (see item 6, §2.5). Flags/arguments TBD.
 
 flags or arguments (`add`):
 
@@ -219,7 +229,7 @@ flags or arguments (`add`):
 - text === the text of the song. Required. May be given as literal text, or as a path to an
   existing file, whose contents are then used as the song's text.
 
-flags or arguments (`remove`):
+flags or arguments (`delete`):
 
 - document name
 - song name
