@@ -92,13 +92,13 @@ instead of inventing synthetic ones.
 
 ## Milestone 4 — Formatting & line-wrapping (FR-1.2)
 
-- [ ] **4.1** Line-height quantization: given a song's text lines and a column width, compute the number of output
+- [x] **4.1** Line-height quantization: given a song's text lines and a column width, compute the number of output
   lines each input line occupies (1, unless it's too wide and must wrap — FR-1.2.8, FR-1.2.9).
   - **Tests**: a short line → 1 output line; a line wider than the column → wraps to the exact expected count of
     output lines without truncation or dropped words; use a couple of the real `TestFiles/*.txt` lyrics (lines of
     varying length) as fixtures, not just synthetic strings.
 
-- [ ] **4.2** Column-fill simulation: given an ordered list of songs and a page's two-column capacity (in lines),
+- [x] **4.2** Column-fill simulation: given an ordered list of songs and a page's two-column capacity (in lines),
   compute how many whole songs fit in column 1, whether/how much the next song overflows into column 2, and the
   final leftover gap (FR-1.2.4–FR-1.2.6).
   - **Tests**: songs that fill column 1 exactly with no overflow; a song that overflows column 1→2; a chapter's
@@ -106,7 +106,7 @@ instead of inventing synthetic ones.
     Milestone 5's ordering is wired in — this test targets the column-fill mechanism in isolation, so assert it
     reports the leftover rather than silently proceeding).
 
-- [ ] **4.3** `\vspace` cosmetic correction: given two columns of known final heights on a page, compute the
+- [x] **4.3** `\vspace` cosmetic correction: given two columns of known final heights on a page, compute the
   `\vspace` amount needed so both start at the same line (FR-1.2.7).
   - **Tests**: equal-height columns → zero vspace; a known height difference → the exact expected vspace value.
 
