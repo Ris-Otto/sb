@@ -1,0 +1,44 @@
+\documentclass[oneside]{book}
+\usepackage{lexend}
+\usepackage{etoolbox}
+\usepackage{titlesec}
+\usepackage[a4paper, margin=0in, bmargin=0in, tmargin=0in]{geometry}
+\fontsize{12pt}{150pt}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+
+    \pagestyle{empty}
+    \begingroup
+    \patchcmd{\chapter}{plain}{empty}{}{}
+
+
+    \begin{titlepage}
+        \vspace*{144pt}
+        \begin{center}
+            \Huge\bf {title}\\
+            \large {subtitle}
+        \end{center}
+
+
+        \enlargethispage{3cm}
+
+
+    \end{titlepage}
+
+
+
+
+    \endgroup
+
+
+    \clearpage
+    \pagenumbering{arabic}
+
+
+    %Chapters come here
+    %\input{*relative_path_to_chapter.tex*}
+
+
+\end{document}

@@ -19,41 +19,63 @@ SB should have two formatting options; multi-column and single-column.
 The multi-column option is achieved by using LaTeX's \minipage-command.
 The single-column is default LaTeX behaviour.
 
-Multi-column formatting is achieved via LaTeX minipages. Proper vertical alignment between two or more
-columns is achieved by adding `\vspace` to the end of the shortest minipage.
+Multi-column formatting is achieved via LaTeX minipages. Columns are filled sequentially with as
+many whole songs as fit. When using space-efficient ordering, a later, shorter song is preferred
+to fill any remaining column space on a page before moving on to a new page — only a chapter's
+final page may be left partially empty, since no further song content exists to fill it (2026-09-28
+update). Whatever small residual gap remains after that is corrected cosmetically by adding
+`\vspace` to the end of the shorter column — vertical alignment is a finishing touch, not the
+primary mechanism for using available space.
 
-Formatting songs unfortunately requires some knowledge of how the songs are phrased. The program
-should be able to make a best-effort guess on how the song is phrased
-(if the user requests it). Generally, a musical phrase in terms of songs text is as
-long as a subsentence (until comma), a sentence or simply a whole line.
-The output of SB should generally be one phrase = one line. Sometimes, this is not possible,
-especially in multi-column leaflets, since space is limited.
+SB does not try to detect musical phrasing. The user's own line breaks are trusted as-is: one
+input line becomes one output line. The only exception is a line too wide for the column
+(especially likely in multi-column leaflets, since space is limited), which is broken across
+multiple output lines rather than overflowing or being truncated.
 
 
 
 ### 2.2 Ordering
 
 SB should, based on user input, order the songs in the most space-efficient
-way, or in the order that the user lists them. See section *N*.
+way, or in the order that the user lists them.
 
 ### 2.3 Numbering
 
 SB should assign a number to each song in a document, either in the order
 they were given or in a specified order given by the user
 
-### 2.4 Config
-
-The application config is a separate .yml-file that the user can modify.
-It contains mostly LaTeX constants and commands, or a shorthand for them (preamble).
-The program should be able to validate the fields in the config, read them into memory
-on start-up, and use them when building the LaTeX-code.
-
 ### 2.5 Storage
+
+#### 2.5.1 Documents and chapters
 
 Each document is stored in its own folder. Chapters are stored in a subfolder, /Chapters/{name}.
 Songs are stored in the chapter folder. Documents and chapters are stored as .tex-files.
-The songs are stored as .txt-files, which are then later parsed when `sb document build` is called.
-Songs are stored in .yml-format, based on the information gathered/inferred when they were added.
+
+#### 2.5.2 Songs
+The songs are stored as .yml-files, which are then later parsed when `sb document build` is called.
+The .yml for a song looks like this:
+```
+- title: {--title}
+- writer: {--writer}
+- melody: {--melody}
+- number: {--singing-number}
+- text:
+  - {line 1}
+  - ...
+  - {line N}
+- score: #Optional
+  - {score_filename}
+```
+
+The document and chapter the song belongs to is inferred, since the songs is stored inside the chapter-folder
+it belongs to, which in turn is stored inside the document-folder the chapter belongs to.
+
+#### 2.5.3
+Since files and folders may be saved wherever the user wants, the database should be the source of truth for fast lookup. 
+If a file or folder isn't where the database says it is, inform user about the mismatch. The database should contain:
+"documents": path to the maindocument folder, document filename, internal id. 
+"chapters": chapter name, document id, internal id.                                                                        
+"songs": song name, song number, chapter id, internal id
 
 
 
@@ -106,7 +128,6 @@ flags or arguments (`create`):
 - subtitle
 - table of contents
 - output folder
-- format === [Ss]ingle-column | [Mm]ulti-column
 
 flags or arguments (`list`):
 
@@ -128,6 +149,7 @@ flags or args (`build`):
 - document-name. Required
 - ordering === song number-wise or by space-efficiency
 - max-permutations === default 100?
+- format === [Ss]ingle-column | [Mm]ulti-column
 - other relevant stuff? open to suggestions
 
 #### 2.6.2 `chapters`
@@ -170,7 +192,8 @@ flags or arguments (`add`):
 - title === the **display** title of the song. Visible in the LaTeX-output. Required
 - melody === the melody of the song. Visible in the LaTeX-output. Required
 - writer === the name of the writer of the song text. Visible in the LaTeX output
-- text === the text of the song. Required
+- text === the text of the song. Required. May be given as literal text, or as a path to an
+  existing file, whose contents are then used as the song's text
 
 flags or arguments (`remove`):
 
@@ -212,20 +235,15 @@ flags or arguments (`list`):
 flags or arguments (`remove`):
 
 - document name. Required
-- song name. If not set, removes all scores from 
-
-#### 2.6.5 `config`
-
-The config command modifies or adds lines to the global config.yml.
-
-Until further notice the config will contain only LaTeX specific rules.
-
-examples 
-
-`sb config set pt 12`
-
-`sb config set margin 0.4in`
+- song name. If not set, removes all scores from
 
 ## 3 Testing
 
-Testing happens via XUnit. Files for testing are found in the /Tests folder.
+Testing happens via NUnit. Files for testing are found in the /Tests folder.
+
+## 4 LaTeX main file template
+
+The template is there for you, the implementer, to base a class, 'DocumentTemplate', on. 
+The DocumentTemplate-class builds the main file for the final document. Anytime a chapter is added to the document, 
+insert it into the document. When the document is created, insert the relevant metadata - title, subtitle - into the
+document

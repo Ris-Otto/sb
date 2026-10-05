@@ -1,0 +1,1060 @@
+---
+
+description: "Task list template for feature implementation"
+---
+
+# Tasks: Song Leaflet Generation
+
+**Input**: Design documents from `/specs/001-song-leaflet-generation/`
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
+
+**Tests**: Included and REQUIRED — Constitution Principle III (Test-First Development,
+NON-NEGOTIABLE) mandates a failing test before any production code for new behavior.
+
+**Organization**: Tasks are grouped by user story (from spec.md, priority order P1→P4) to enable
+independent implementation and testing of each story.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies on an incomplete task)
+- **[Story]**: Which user story this task belongs to (US1, US2, US3, US4)
+- File paths are exact and relative to the repository root
+
+## Path Conventions
+
+Single project (existing `sb/sb.csproj`) — see `plan.md` Project Structure. All source paths are
+under `sb/`; all test paths are under `sb/Tests/` (NUnit tests live inside the same project, per
+the existing convention).
+
+## Phase 1: Setup (Shared Infrastructure)
+
+**Purpose**: Project scaffolding and dependency setup — no story-specific logic yet.
+
+- [X] T001 [P] Create the new feature folders per `plan.md` Project Structure:
+  `sb/Config/`, `sb/Index/`, `sb/Documents/`, `sb/Chapters/`, `sb/Formatting/`, `sb/Ordering/`,
+  `sb/Leaflets/`, `sb/Cli/`, `sb/Tests/Cli/` (leave each empty except for a `.gitkeep` if needed
+  — files are added by later tasks).
+- [X] T002 Update `sb/sb.csproj`: change `<TargetFramework>net7.0</TargetFramework>` to
+  `<TargetFramework>net10.0</TargetFramework>` (research.md §1), and add `<PackageReference>`
+  entries for `YamlDotNet` (research.md §10) and `Microsoft.Data.Sqlite` (research.md §13).
+  *(Also added `Microsoft.NET.Test.Sdk` + `NUnit3TestAdapter` so `dotnet test` works, with
+  `GenerateProgramFile=false` to stop the test SDK from shadowing `Program.Main`; pinned
+  `SQLitePCLRaw.bundle_e_sqlite3` to 3.0.3 to clear a high-severity advisory on the version
+  `Microsoft.Data.Sqlite` pulls transitively.)*
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: Entities and the SQLite schema every user story's stores and the engine build on.
+
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete.
+
+- [X] T003 [P] Create the `Song` entity in `sb/Songs/Song.cs` with fields `Title` (string,
+  required), `Text` (string, required), `Writer` (string?, optional), `Melody` (string?,
+  optional), `SingingOrderNumber` (int, required). Enforce data-model.md's validation rule
+  verbatim: "`Title` and `Text` MUST be non-empty (whitespace-only counts as empty)."
+- [X] T004 [P] Create the `LeafletFormat` enum in `sb/Leaflets/LeafletFormat.cs` with values
+  `SingleColumn`, `MultiColumn` (data-model.md).
+- [X] T005 [P] Create the `OrderingMode` enum in `sb/Ordering/OrderingMode.cs` with values
+  `AsListed`, `SpaceEfficient` (data-model.md).
+- [X] T006 [P] Create `SbIndexDatabase` in `sb/Index/SbIndexDatabase.cs`: opens (creating if
+  absent) a SQLite database file via `Microsoft.Data.Sqlite`, and applies the exact schema from
+  `contracts/storage-format.md` / research.md §13:
+  ```sql
+  CREATE TABLE documents (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, filename TEXT NOT NULL);
+  CREATE TABLE chapters (id INTEGER PRIMARY KEY, name TEXT NOT NULL, document_id INTEGER NOT NULL REFERENCES documents(id), UNIQUE (document_id, name));
+  CREATE TABLE songs (id INTEGER PRIMARY KEY, name TEXT NOT NULL, singing_order_number INTEGER NOT NULL, chapter_id INTEGER NOT NULL REFERENCES chapters(id));
+  ```
+- [X] T007 [P] Create `DocumentIndexEntry` in `sb/Index/DocumentIndexEntry.cs` with fields `Id`
+  (int), `Path` (string, required, unique — "Filesystem path to the document's main folder —
+  user-chosen at `create` time (`--path`), not a fixed convention. Unique."), `Filename` (string,
+  required — "Derived from `Path`'s folder name at create time.") per data-model.md.
+- [X] T008 [P] Create `ChapterIndexEntry` in `sb/Index/ChapterIndexEntry.cs` with fields `Id`
+  (int), `Name` (string, required — "Unique within `DocumentId`."), `DocumentId` (int, required
+  — "a `ChapterIndexEntry` cannot exist without one (FR-014/FR-020)") per data-model.md.
+- [X] T009 [P] Create `SongIndexEntry` in `sb/Index/SongIndexEntry.cs` with fields `Id` (int),
+  `Name` (string, required), `SingingOrderNumber` (int, required — "unique across all songs
+  sharing the same document (via `ChapterId` → `DocumentId`), per FR-016"), `ChapterId` (int,
+  required — "a `SongIndexEntry` cannot exist without one (FR-015/FR-021)") per data-model.md.
+
+**Checkpoint**: Foundation ready — user story implementation can now begin.
+
+---
+
+## Phase 3: User Story 1 - Generate a formatted leaflet from a list of songs (Priority: P1) 🎯 MVP
+
+**Goal**: Turn an in-memory list of songs into a complete, compilable single- or multi-column
+LaTeX leaflet, trusting the user's own line breaks — one input line per output line wherever
+space allows (phrase-splitting was in scope originally but removed 2026-09-26; see Phase 12).
+
+**Independent Test**: Call `LeafletBuilder.Build` directly with a small set of plain-text songs
+(no CLI/storage involved), choose single- vs. multi-column, and verify the output is a valid,
+structurally-correct LaTeX document (per `contracts/leaflet-builder-api.md` and
+`contracts/latex-output-contract.md`).
+
+### Tests for User Story 1 ⚠️
+
+> Write these tests FIRST; confirm they FAIL before implementing.
+
+- [X] ~~T010~~ [P] [US1] Write failing tests for `PhraseSplitter` in `sb/Tests/PhraseSplitterTests.cs`:
+  splitting on line breaks → sentence punctuation → commas (research.md §3), the no-punctuation
+  fallback ("treat the whole line as one phrase" — spec.md Edge Cases), and cases drawn from the
+  real fixtures in `sb/Tests/TestFiles/*.txt`.
+  *(Superseded 2026-09-26 — see Phase 12: phrase-splitting removed; `PhraseSplitter.cs` and this
+  test file are deleted.)*
+- [X] T011 [P] [US1] Write failing tests for `LatexEscaper` in `sb/Tests/LatexEscaperTests.cs`
+  covering every reserved character `\ { } % & # _ ~ ^` (research.md §6, FR-010).
+- [X] T012 [P] [US1] Write failing tests for `ColumnBalancer` in
+  `sb/Tests/ColumnBalancerTests.cs`: the `.475\textwidth`/`.45\textwidth` split with a
+  `0.075\textwidth` gutter, and a `\vspace` appended to the shortest column(s) so columns end
+  "within one text line's height of each other" (SC-003, research.md §5).
+  *(SC-003 citation superseded 2026-09-28 — SC-003 removed; see research.md §5's superseded note
+  and spec.md's new FR-007/SC-012.)*
+- [X] T013 [P] [US1] Write failing tests for `SongOrderer` (AsListed mode only for now) in
+  `sb/Tests/SongOrdererTests.cs`: given a list, `AsListed` MUST preserve "exactly the order they
+  were provided" (Acceptance Scenario 1).
+- [X] T014 [P] [US1] Write failing end-to-end tests for `LeafletBuilder.Build` in
+  `sb/Tests/LeafletBuilderTests.cs` using real fixtures from `sb/Tests/TestFiles/`, covering:
+  single-column output (Acceptance Scenario 1), multi-column output with balanced columns
+  (Scenario 2), a phrase too wide for its column being broken across lines rather than
+  overflowing (Scenario 3), rejection of an empty song list with a descriptive error (FR-012),
+  rejection when `sb/template-main.tex` is missing/malformed (data-model.md `DocumentTemplate`
+  validation rule), determinism (two identical calls produce byte-for-byte identical `Document`
+  output), and — per `contracts/latex-output-contract.md`'s per-song-block invariant — that each
+  song's `\paragraph*{...}` includes its `Song.SingingOrderNumber` alongside its `Title` (FR-008;
+  the field is already required on `Song` since T003, so there is no reason to defer this to a
+  later story).
+
+### Implementation for User Story 1
+
+- [X] ~~T015~~ [P] [US1] Create the `Phrase` record in `sb/Formatting/Phrase.cs` with field `Text`
+  (string). Enforce verbatim: "A `Phrase` is never empty; the splitter never produces
+  zero-length phrases," and "Ordering of phrases within a song always matches the original
+  text's reading order." *(Superseded 2026-09-26 — see Phase 12: `Phrase.cs` deleted.)*
+- [X] ~~T016~~ [US1] Implement `PhraseSplitter` in `sb/Formatting/PhraseSplitter.cs` per research.md
+  §3 (line breaks → sentence punctuation → commas → whole-line fallback), producing `Phrase[]`
+  (depends on T015); make T010 pass. *(Superseded 2026-09-26 — see Phase 12: `PhraseSplitter.cs`
+  deleted; `LeafletBuilder` now splits on `\n` directly.)*
+- [X] T017 [P] [US1] Implement `LatexEscaper` in `sb/Formatting/LatexEscaper.cs` per research.md
+  §6; make T011 pass.
+- [X] T018 [P] [US1] Create the `Column` record in `sb/Leaflets/Column.cs` with fields `Lines`
+  (`string[]`) and `HeightInLines` (int — "`Lines.Length`, used to determine the shortest
+  column(s) for `\vspace` balancing").
+- [X] ~~T019~~ [US1] Implement `ColumnBalancer` in `sb/Leaflets/ColumnBalancer.cs` per research.md §5
+  (depends on T018); make T012 pass.
+  *(Superseded 2026-09-27 — see Phase 17: one-song-per-column-per-row `RenderRow` replaced by
+  sequential column-fill, `/speckit-analyze` finding U1.)*
+- [X] T020 [P] [US1] Create the `LeafletRequest` record in `sb/Leaflets/LeafletRequest.cs` with
+  fields `Title` (string, required), `Songs` (`Song[]`, required), `Format` (`LeafletFormat`,
+  required), `Ordering` (`OrderingMode`, required), `MaxPermutations` (int, optional, default
+  100). Enforce verbatim: "`Songs` MUST be non-empty (FR-012); a request with zero songs ... is
+  rejected with a descriptive error rather than producing output," "`Title` MUST be non-empty,"
+  and "`MaxPermutations`, when supplied, MUST be a positive integer."
+- [X] T021 [P] [US1] Create the `PlacedSong` record in `sb/Leaflets/PlacedSong.cs` with fields
+  `Song` (`Song`) and `PhysicalPosition` (int — "used internally for column/page distribution
+  only — NOT displayed, and NOT the same value as `Song.SingingOrderNumber`").
+- [X] T022 [P] [US1] Create the `Leaflet` record in `sb/Leaflets/Leaflet.cs` with fields `Format`
+  (`LeafletFormat`), `Songs` (`PlacedSong[]`), `Document` (string).
+- [X] T023 [P] [US1] Implement `DocumentTemplate` in `sb/Leaflets/DocumentTemplate.cs`: read
+  `sb/template-main.tex`, locate its `titlepage` block's literal `Title` text and its
+  `%Chapters come here` / `\input{...}` comment block, and substitute both. Enforce verbatim:
+  "`LeafletBuilder` MUST fail with a descriptive error if `sb/template-main.tex` is missing or
+  does not contain the expected placeholder/insertion markers, rather than silently emitting a
+  malformed document."
+- [X] T024 [US1] Implement `SongOrderer` in `sb/Ordering/SongOrderer.cs` with `AsListed` support
+  only (identity pass-through preserving input order — `SpaceEfficient` is added in US3); make
+  T013 pass.
+- [X] T025 [US1] Implement `LeafletBuilder.Build` in `sb/Leaflets/LeafletBuilder.cs` per
+  `contracts/leaflet-builder-api.md`: validate preconditions, invoke `SongOrderer` per
+  `request.Ordering`, assign each `PlacedSong.PhysicalPosition`, format each song via
+  `PhraseSplitter`/`LatexEscaper` — rendering each song block as `\paragraph*{<SingingOrderNumber>
+  <Title>\\}` (i.e., displaying `Song.SingingOrderNumber`, never `PlacedSong.PhysicalPosition`,
+  per FR-008/FR-009 and `contracts/latex-output-contract.md`) — balance columns via
+  `ColumnBalancer` when `Format` is `MultiColumn`, and merge the result into a `DocumentTemplate`
+  instance to produce `Leaflet.Document` (depends on T016, T017, T019, T020, T021, T022, T023,
+  T024); make T014 pass. *(`PhraseSplitter` step superseded 2026-09-26 — see Phase 12:
+  `RenderSongBlock` now splits `song.Text` on `\n` directly instead.)*
+
+**Checkpoint**: User Story 1 is fully functional and independently testable via direct
+`LeafletBuilder.Build` calls — no CLI or storage required.
+
+---
+
+## Phase 4: User Story 2 - Maintain valid document/chapter/song structure (Priority: P2)
+
+**Goal**: Documents/chapters/songs can be created through the CLI with correct containment rules
+(FR-013/014/015) and are tracked in the SQLite index so they can be located regardless of where
+their folder lives (FR-018–FR-023).
+
+**Independent Test**: Create a document with no chapters/songs (succeeds), attempt to add a song
+before any chapter exists (rejected), add a chapter (succeeds), then add a song to it (succeeds);
+move/delete a document's folder and confirm a mismatch is reported.
+
+### Tests for User Story 2 ⚠️
+
+- [X] T026 [P] [US2] Write failing tests for `DocumentStore` in
+  `sb/Tests/DocumentStoreTests.cs`: `Create` with `--path` writes a `documents` index row (path +
+  derived filename) and creates the folder (FR-018/FR-019); a document with zero chapters is
+  valid and persists (FR-013); a duplicate `--path` is rejected; `Delete`/`Rename` on an unknown
+  name is rejected.
+- [X] T027 [P] [US2] Write failing tests for `ChapterStore` in `sb/Tests/ChapterStoreTests.cs`:
+  `Add` rejects an unknown parent document (FR-014/FR-020); `Name` uniqueness within a document;
+  `Remove` cascades to delete all songs in the chapter (spec.md Assumptions — cascading removal).
+- [X] T028 [P] [US2] Write failing tests for `SongStore`'s basic `Add`/`Remove`/`List` in
+  `sb/Tests/SongStoreTests.cs`: `Add` rejects an unknown parent chapter (FR-015/FR-021) and, on
+  success, writes the `<name>.txt`/`.yml` pair plus a `songs` index row.
+  *(Superseded 2026-09-26 — see Phase 8 T062: the `<name>.txt`/`.yml` pair is now a single
+  `<name>.yml`.)*
+- [X] T029 [P] [US2] Write failing tests for `LocationMismatchDetector` in
+  `sb/Tests/LocationMismatchDetectorTests.cs`: after a document/chapter/song's folder or file is
+  deleted or moved out from under a valid index entry, detection MUST produce a `MismatchReport`
+  (`EntityKind`, `Id`, `ExpectedPath`) rather than silently succeeding or throwing an unhandled
+  error (FR-022/FR-023).
+- [X] T030 [P] [US2] Write failing CLI tests for `sb documents create|list|delete|rename` in
+  `sb/Tests/Cli/DocumentCommandsTests.cs` per `contracts/cli-commands.md` (including `--path` and
+  `list` surfacing `MismatchReport`s).
+- [X] T031 [P] [US2] Write failing CLI tests for `sb chapters add|remove|list` in
+  `sb/Tests/Cli/ChapterCommandsTests.cs` per `contracts/cli-commands.md`.
+- [X] T032 [P] [US2] Write failing CLI tests for `sb songs add|remove|list` (basic fields; no
+  singing-order-number uniqueness case yet — that's US4) in `sb/Tests/Cli/SongCommandsTests.cs`
+  per `contracts/cli-commands.md`.
+
+### Implementation for User Story 2
+
+- [X] T033 [P] [US2] Create the `Document` entity in `sb/Documents/Document.cs` with fields `Id`
+  (int), `Name` (string, required), `Title` (string, required), `Subtitle` (string?, optional),
+  `Format` (`LeafletFormat`), `Chapters` (`Chapter[]`, may be empty). Enforce verbatim: "`Name`
+  and `Title` MUST be non-empty," and "`Name` MUST be unique among documents (enforced via
+  `DocumentIndexEntry.Path` uniqueness)."
+- [X] T034 [P] [US2] Create the `Chapter` entity in `sb/Chapters/Chapter.cs` with fields `Id`
+  (int), `Name` (string, required), `Title` (string?, optional), `Songs` (`Song[]`, may be
+  empty). Enforce verbatim: "`Name` MUST be unique within its parent document."
+- [X] T035 [US2] Implement `DocumentStore` in `sb/Documents/DocumentStore.cs`: `Create` (writes
+  the folder at `--path` or the `./<name>` default, and a `documents` index row),
+  `List`/`Delete`/`Rename` (depends on T006, T007, T033); make T026 pass.
+- [X] T036 [US2] Implement `ChapterStore` in `sb/Chapters/ChapterStore.cs`: `Add` (validates the
+  parent document exists, writes a `chapters` index row and `Chapters/<name>/` folder),
+  `Remove` (cascading), `List` (depends on T035, T008, T034); make T027 pass.
+- [X] T037 [US2] Implement `SongStore`'s basic `Add`/`Remove`/`List` in `sb/Songs/SongStore.cs`:
+  `Add` validates the parent chapter exists, writes `<name>.txt` + `<name>.yml` (title/writer?/
+  melody? only) and a `songs` index row (depends on T036, T009, T003); make T028 pass.
+  *(Superseded 2026-09-26 — see Phase 8 T063: rewritten to a single `<name>.yml` including
+  `number`/`text`/`score?`.)*
+- [X] T038 [P] [US2] Implement `LocationMismatchDetector` in
+  `sb/Index/LocationMismatchDetector.cs`: for each index entry, compute its expected path
+  (`documents.path` directly; `Chapters/<name>/` and `<name>.txt`/`.yml` derived for
+  chapters/songs) and check it against the filesystem, returning a `MismatchReport` per miss
+  (depends on T006–T009); make T029 pass.
+- [X] T039 [US2] Implement `sb documents create|list|delete|rename` in
+  `sb/Cli/DocumentCommands.cs` and wire it into `Program.cs`'s `RootCommand` (depends on T035,
+  T038); make T030 pass.
+- [X] T040 [US2] Implement `sb chapters add|remove|list` in `sb/Cli/ChapterCommands.cs` and wire
+  it into `Program.cs` (depends on T036); make T031 pass.
+- [X] T041 [US2] Implement `sb songs add|remove|list` (basic) in `sb/Cli/SongCommands.cs` and
+  wire it into `Program.cs` (depends on T037); make T032 pass.
+
+**Checkpoint**: User Stories 1 AND 2 both work independently — documents/chapters/songs can be
+created, stored, and located correctly, alongside the standalone formatting engine.
+
+---
+
+## Phase 5: User Story 3 - Order songs automatically or as specified (Priority: P3)
+
+**Goal**: `sb documents build` produces a leaflet with songs either in the user's listed order or
+automatically arranged for minimal unused space, bounded by `--max-permutations`.
+
+**Independent Test**: Build the same document twice — once `--ordering as-listed`, once
+`--ordering space-efficient` — and verify the resulting order differs accordingly and is
+deterministic for a given input and choice.
+
+### Tests for User Story 3 ⚠️
+
+- [X] T042 [P] [US3] Extend `sb/Tests/SongOrdererTests.cs` with `SpaceEfficient` cases: exact
+  search minimizing unused space when the song count keeps permutations within
+  `MaxPermutations` (default 100, research.md §4), the deterministic greedy fallback beyond that
+  bound, and deterministic tie-breaking (spec.md Edge Cases: "two songs are otherwise identical
+  in space usage").
+- [X] T043 [P] [US3] Extend `sb/Tests/LeafletBuilderTests.cs` with a case comparing
+  `SpaceEfficient` vs. `AsListed` output for the same songs, asserting the former minimizes
+  unused space/pages relative to the original order (Acceptance Scenario 2).
+- [X] T044 [P] [US3] Extend `sb/Tests/Cli/DocumentCommandsTests.cs` with `sb documents build
+  --ordering`/`--max-permutations` cases per `contracts/cli-commands.md`, including the
+  not-a-positive-integer error for `--max-permutations`.
+
+### Implementation for User Story 3
+
+- [X] T045 [US3] Extend `SongOrderer` in `sb/Ordering/SongOrderer.cs` with `SpaceEfficient`:
+  bounded exact permutation search (reusing `sb/PermutationsAndCombinations.cs`) up to
+  `MaxPermutations`, falling back to a deterministic greedy (longest-first) heuristic beyond it
+  (research.md §4) (depends on T024); make T042 pass.
+  *(Partially superseded 2026-09-27 — see Phase 17: the search/fallback structure itself is
+  unchanged, but `ComputeWastedSpace`/`GreedyFallback`'s pairwise-adjacent cost metric is replaced
+  by one that simulates real column-fill packing, `/speckit-analyze` finding U1.)*
+- [X] T046 [US3] Implement `sb documents build` in `sb/Cli/DocumentCommands.cs`: load the named
+  `Document` (resolving its path via the index), flatten all chapters' songs into a
+  `LeafletRequest`, call `LeafletBuilder.Build`, and write `Leaflet.Document` to
+  `<document's indexed path>/main.tex`, per `contracts/cli-commands.md`'s full error list
+  (unknown document, zero songs/FR-012, non-positive `--max-permutations`,
+  index/filesystem mismatch/FR-023) (depends on T025, T035, T036, T037, T038, T039, T045); make
+  T043 and T044 pass.
+
+**Checkpoint**: User Stories 1, 2, and 3 all work independently; `sb documents build` produces a
+complete leaflet with a chosen physical ordering.
+
+---
+
+## Phase 6: User Story 4 - Assign and preserve each song's singing-order number (Priority: P4)
+
+**Goal**: Every song's singing-order number is user-assigned, unique within its document,
+displayed in the built leaflet, retrievable independent of physical position, and immune to any
+reordering/relayout operation.
+
+**Independent Test**: Assign singing-order numbers to a set of songs, build the leaflet with
+`--ordering as-listed`, then rebuild with `--ordering space-efficient`, and verify every song
+displays the exact same singing-order number in both outputs.
+
+### Tests for User Story 4 ⚠️
+
+- [X] T047 [P] [US4] Extend `sb/Tests/SongStoreTests.cs` with singing-order-number uniqueness
+  cases (FR-016): `Add` rejects a `SingingOrderNumber` already used by another song in the same
+  document (across chapters), with a descriptive error naming the conflicting song.
+- [X] T048 [P] [US4] Extend `sb/Tests/SongStoreTests.cs` with `Modify` cases: moving `--chapter`
+  MUST NOT change `SingingOrderNumber` (FR-024), and changing `--singing-number` goes through
+  the same uniqueness check as `Add`; also cover `GetSingingOrderNumber` (FR-017) returning the
+  number independent of the song's current physical position.
+- [X] T049 [P] [US4] Extend `sb/Tests/LeafletBuilderTests.cs` with a **regression** case (the
+  display behavior itself was already implemented and tested in T014/T025) confirming that,
+  across both `AsListed` and `SpaceEfficient` builds of the same songs (now that T045/T046 make
+  `SpaceEfficient` available), every displayed number is still `Song.SingingOrderNumber` (never
+  `PlacedSong.PhysicalPosition`) and is unchanged between the two builds (FR-008/FR-009, SC-004).
+- [X] T050 [P] [US4] Extend `sb/Tests/Cli/SongCommandsTests.cs` with `sb songs modify` cases and
+  the singing-number conflict error, per `contracts/cli-commands.md`.
+
+### Implementation for User Story 4
+
+- [X] T051 [US4] Add singing-order-number uniqueness enforcement to `SongStore.Add` in
+  `sb/Songs/SongStore.cs`: before insert, query all songs whose `chapter_id` joins to the same
+  `document_id` (per `contracts/storage-format.md`) and reject on conflict (depends on T037);
+  make T047 pass. *(Uniqueness check itself is unaffected by the 2026-09-26 storage-format
+  change — see Phase 8 T063, which preserves this check against the index mirror.)*
+- [X] T052 [US4] Implement `SongStore.Modify` (title/writer/melody/chapter/singing-number) and
+  `SongStore.GetSingingOrderNumber` in `sb/Songs/SongStore.cs`, preserving `SingingOrderNumber`
+  across a chapter move and re-running the uniqueness check on a number change (depends on T051);
+  make T048 pass. *(Rewritten alongside T063 to read/write `number` from the single `.yml` file
+  rather than the index alone.)*
+- [X] T053 [US4] Regression check only — no rendering change expected: confirm
+  `LeafletBuilder` (`sb/Leaflets/LeafletBuilder.cs`, implemented in T025) still displays
+  `Song.SingingOrderNumber` next to each song once `SongOrderer.SpaceEfficient` (T045) is in the
+  mix; fix only if T049 reveals a regression (depends on T025, T045); make T049 pass.
+- [X] T054 [US4] Implement `sb songs modify` in `sb/Cli/SongCommands.cs` and wire the
+  singing-number conflict error (depends on T052, T041); make T050 pass.
+
+**Checkpoint**: All four user stories are independently functional; the full `sb documents build`
+flow (format + structure + ordering + numbering) works end-to-end.
+
+---
+
+## Phase 7: Polish & Cross-Cutting Concerns
+
+**Purpose**: Config support (`sb/specification.md` §2.4 — not tied to a specific spec.md FR, so
+built after all user stories) and final validation.
+*(T055–T058 REMOVED 2026-09-26 — Config is now out of scope entirely, not just unbuilt; see
+Phase 8 T067. Left below, struck through in spirit, for history only — do not re-run or rely on
+this code.)*
+
+- [X] ~~T055~~ [P] Write failing tests for `ConfigLoader` in `sb/Tests/ConfigLoaderTests.cs`: valid
+  `config.yml` loads into `AppConfig`; an invalid field "MUST fail startup with a descriptive
+  error rather than silently proceeding with a malformed or partial config" (data-model.md
+  `AppConfig` validation rule, research.md §11).
+- [X] ~~T056~~ [P] Create `AppConfig` in `sb/Config/AppConfig.cs` with field `Fields`
+  (`IReadOnlyDictionary<string,string>`).
+- [X] ~~T057~~ Implement `ConfigLoader` in `sb/Config/ConfigLoader.cs`: reads and validates
+  `config.yml` once at CLI startup via `YamlDotNet` (depends on T055, T056); make T055 pass.
+- [X] ~~T058~~ Implement `sb config set <key> <value>` in `sb/Cli/ConfigCommands.cs` and wire it
+  into `Program.cs` (depends on T057).
+- [X] T059 [P] Run every scenario in `quickstart.md` end-to-end against a built `sb` CLI
+  (document creation at an arbitrary `--path`, chapter/song add, `build` with both ordering
+  modes, and the mismatch-detection scenario) and confirm each documented "Expected outcome."
+- [X] T060 Review and finalize help/description text for every `System.CommandLine` command and
+  option across `sb/Cli/*.cs` (Constitution Principle V — documented at the point of
+  definition).
+- [X] T061 [P] Add an aggregate-accuracy test in `sb/Tests/LeafletBuilderTests.cs` (or a new
+  `sb/Tests/AggregateAccuracyTests.cs`) that runs `PhraseSplitter` and `ColumnBalancer` across
+  every fixture in `sb/Tests/TestFiles/*.txt` and asserts the ≥95% pass-rate thresholds in SC-002
+  ("at least 95% of output lines contain exactly one musical phrase") and SC-003 ("columns...end
+  within one text line's height of each other in at least 95% of generated pages") hold in
+  aggregate, not just on the individual cases already covered by T010/T012.
+  *(SC-002 revised, and this test's `PhraseSplitter` usage replaced with direct line-splitting —
+  2026-09-26, see Phase 12.)*
+  *(SC-003 citation superseded 2026-09-28 — SC-003 removed; see research.md §5's superseded note
+  and spec.md's new FR-007/SC-012. `AggregateAccuracyTests.SC003_...`, per T119's note below, was
+  already rewritten against `ColumnBalancer.Fill`/`SongBlock` for other reasons — it should be
+  re-scoped again to measure SC-012's page-density criterion instead, a follow-up task.)*
+
+---
+
+## Phase 8: 2026-09-26 Delta — Single-file song storage & Config removal
+
+**Purpose**: Apply the two changes from spec.md's 2026-09-26 Clarification (folded from an
+updated `sb/specification.md`) to the already-implemented feature: (1) a song is now one
+`<name>.yml` file, not a `<name>.txt` + `<name>.yml` pair, with its own `number`/`text`/`score?`
+fields, and (2) Config (`AppConfig`/`ConfigLoader`/`sb config set`) is removed entirely, not
+merely left unbuilt. See plan.md's Complexity Tracking (2026-09-26 re-check), research.md §9/§11/
+§12, data-model.md's `Song` entity, and `contracts/storage-format.md`/`cli-commands.md`.
+
+### Song storage format
+
+- [x] T062 [P] Update `sb/Tests/SongStoreTests.cs` (superseding T028/T037's original
+  assertions): `Add`/`Modify` write and read a single `<name>.yml` with `title`, `writer?`,
+  `melody?`, `number`, `text` (list of lines), `score?` (list of filenames); no `<name>.txt` is
+  written or read. Verify each field round-trips.
+  *(`Add_WritesASingleSongFile_AndAnIndexRow`, `Add_RoundTripsTheOptionalScoreField`.)*
+- [x] T063 [US2/US4] Rewrite `SongStore` in `sb/Songs/SongStore.cs` (depends on T062): `Add`/
+  `Modify`/`Remove`/`List` operate on a single `<name>.yml` (via `YamlDotNet`) instead of a
+  `.txt`+`.yml` pair; the file's `number` is the source of truth, and `SongStore` continues to
+  mirror it into `songs.singing_order_number` on every write, using that mirror (not the file)
+  for the existing fast uniqueness check (FR-016, research.md §12); make T062 pass.
+- [x] T064 [P] Update `sb/Songs/Song.cs`: add `Score` (`IReadOnlyList<string>?`, optional,
+  additive — no existing caller breaks). `Text` stays `string` in memory (lines joined by `\n`,
+  unchanged) — only the on-disk `.yml` round-trips it as a `text:` list of lines (data-model.md
+  `Song`); this avoids a broad, low-value signature change across `LeafletBuilder`/`SongOrderer`/
+  existing tests for a distinction the spec never requires at the in-memory-type level.
+- [x] T065 [P] Extend `sb/Tests/LocationMismatchDetectorTests.cs` (or add a focused test) for the
+  new drift case: when a song's `.yml` `number` disagrees with its indexed
+  `songs.singing_order_number` mirror, detection MUST surface a mismatch rather than silently
+  trusting either side (contracts/storage-format.md invariant, following FR-023's pattern).
+  *(`DetectAll_ReportsASongNumberMismatch_WhenTheYmlFileIsHandEditedOutsideSb`.)*
+- [x] T066 [US2/US4] Extend `LocationMismatchDetector` (`sb/Index/LocationMismatchDetector.cs`)
+  to perform the number-vs-file comparison from T065 alongside its existing path checks; make
+  T065 pass. *(New `MismatchEntityKind.SongNumber` + `MismatchReport.Detail`.)*
+- [x] T067 [P] Update `sb/Tests/Cli/SongCommandsTests.cs` and `contracts/cli-commands.md`-facing
+  behavior if any: `songs add`/`modify`'s `--text` flag continues to accept raw text (split into
+  `text:` lines internally) — no CLI flag shape change is required by this delta.
+  *(Verified: no `.txt`-file assertions existed in `Cli/SongCommandsTests.cs`; no change needed.)*
+
+### Config removal
+
+- [x] T068 Delete `sb/Config/AppConfig.cs`, `sb/Config/ConfigLoader.cs`,
+  `sb/Cli/ConfigCommands.cs`, `sb/Tests/ConfigLoaderTests.cs`, and
+  `sb/Tests/Cli/ConfigCommandsTests.cs` (superseding T055–T058); remove the `config` subcommand
+  registration from `Program.cs`/`Cli/CliRoot.cs`.
+- [x] T069 [P] Remove any remaining reference to `config.yml`/`AppConfig`/`ConfigLoader` in
+  `sb/template-main.tex` comments or elsewhere in `sb/` (grep for `config` post-removal to
+  confirm none remain outside this tasks.md/plan.md/research.md history).
+  *(Confirmed via `grep -rni config sb --include=*.cs --include=*.tex --include=*.csproj`: only
+  the historical note in `Cli/CliRoot.cs`'s doc comment remains.)*
+
+### Validation
+
+- [x] T070 Re-run every scenario in `quickstart.md` end-to-end (as T059 did) to confirm nothing
+  regressed from the single-file song format or the Config removal.
+  *(Ran an isolated `documents create`→`chapters add`→`songs add`→`documents build`→`documents
+  list` smoke test with a temp `APPDATA`; confirmed the single `.yml` (title/writer/melody/
+  number/text/score) and the built leaflet correctly rendering the song's lyric lines.)*
+- [x] T071 `dotnet test` passes with zero references to removed Config types and the full
+  `SongStore`/`LocationMismatchDetector` suites green under the new single-file format.
+
+---
+
+## Phase 9: 2026-09-26 Delta 2 — main.tex as sole document storage; `--format` moves to `build`
+
+**Purpose**: Apply the two changes from `/speckit-clarify`'s second 2026-09-26 round (spec.md's
+two added Clarification bullets): (1) a document has no metadata file of its own — `main.tex`
+(rendered from `sb/template-main.tex`, `{title}`/`{subtitle}` tokens) is written immediately at
+`create` time, alongside an empty `Chapters/` folder, and is the sole source for `Title`/
+`Subtitle` on every later read; (2) `--format` moves from `documents create` to `documents build`
+since there is no persisted document default to override. See research.md §6/§9's 2026-09-26
+updates, data-model.md's `Document`/`LeafletRequest`, and `contracts/cli-commands.md`/
+`storage-format.md`.
+
+- [x] T072 [P] Add `LatexEscaper.Unescape` (`sb/Formatting/LatexEscaper.cs`), the exact reverse of
+  `Escape`, plus round-trip tests in `sb/Tests/LatexEscaperTests.cs`.
+- [x] T073 [US2] Rewrite `DocumentTemplate` (`sb/Leaflets/DocumentTemplate.cs`) to use `{title}`/
+  `{subtitle}` tokens (was a literal `"\Huge\bf Title\\"` string match, with no subtitle handling
+  at all): `Render(escapedTitle, escapedSubtitle, content)` substitutes both, and the new static
+  `ParseTitleAndSubtitle(renderedMainTex)` recovers them by reversing the substitution via
+  `LatexEscaper.Unescape`. Update `sb/template-main.tex`'s two placeholder lines to match. Add
+  `sb/Tests/DocumentTemplateTests.cs` covering the round-trip (with and without a subtitle).
+  Depends on T072.
+- [x] T074 [US2] Rewrite `DocumentStore` (`sb/Documents/DocumentStore.cs`, depends on T073):
+  `Create` writes `main.tex` immediately (via `DocumentTemplate`) and an empty `Chapters/` folder
+  in the same call — no `document.yml`; `List`/`Find` recover `Title`/`Subtitle` by reading and
+  parsing each document's current `main.tex` (falling back to `("(untitled)", null)` if it's
+  missing, consistent with FR-023's "surface, don't crash" pattern elsewhere). Delete
+  `sb/Documents/DocumentMetadataFile.cs`. Remove `Format` from `Document`
+  (`sb/Documents/Document.cs`) entirely.
+- [x] T075 [P] Update `sb/Tests/DocumentStoreTests.cs`: replace the `Format`-persistence test with
+  main.tex/`Chapters/`-existence assertions and title/subtitle round-trip assertions (including a
+  LaTeX-special-character title, to exercise T072's `Unescape`); assert no `.yml` file exists in a
+  created document's folder.
+- [x] T076 [US1/US2] Thread `Subtitle` through `LeafletRequest`
+  (`sb/Leaflets/LeafletRequest.cs`) and `LeafletBuilder.Build`
+  (`sb/Leaflets/LeafletBuilder.cs`, escapes it the same way as `Title` before calling
+  `DocumentTemplate.Render`), so a `documents build` re-substitutes the same title/subtitle into
+  the rebuilt `main.tex` (keeping T074's read-back working after a build, not just before the
+  first one).
+- [x] T077 [US3] Move `--format` from `sb documents create` to `sb documents build`
+  (`sb/Cli/CliRoot.cs`): remove the option from `create`'s command, add it (same
+  `single-column`/`multi-column` parsing, default `single-column`) to `build`'s. Update
+  `DocumentCommands.Create` (drop the `format` parameter) and `DocumentCommands.Build` (add a
+  `LeafletFormat format = LeafletFormat.SingleColumn` parameter, passed into the constructed
+  `LeafletRequest` alongside `document.Subtitle` from T076).
+- [x] T078 [P] Update `sb/specification.md` §2.6.1: remove `format` from `create`'s flag list, add
+  it to `build`'s (per the user's explicit request when answering the `/speckit-clarify` question
+  about where `--format` should live).
+- [x] T079 Re-run an isolated end-to-end smoke test (temp `APPDATA`, as T070 did): `documents
+  create` (with a LaTeX-special-character title/subtitle) writes only `main.tex` + empty
+  `Chapters/`; `documents build --format multi-column` succeeds; `documents list` shows the exact
+  original title back. `dotnet test` full suite green.
+
+---
+
+## Phase 10: 2026-09-26 Delta 3 — document `.tex` file named after `--name`
+
+**Purpose**: Apply the third `/speckit-clarify` round's change (spec.md's third bullet, same
+Session 2026-09-26): a document's rendered `.tex` file is `<name>.tex`, not a fixed `main.tex`,
+and is renamed alongside `sb documents rename`. See research.md §9's third 2026-09-26 update,
+data-model.md's `Document`, and `contracts/cli-commands.md`/`storage-format.md`.
+
+- [x] T080 [US2] `DocumentStore` (`sb/Documents/DocumentStore.cs`): replace the
+  `MainTexFileName = "main.tex"` constant with a `TexFileName(string name) => $"{name}.tex"`
+  helper computed from the document's `--name`; use it in `Create` (writing), `List` (reading
+  back title/subtitle), and `Rename` (renaming the file on disk alongside the index's
+  `filename` column, guarded by `File.Exists` so a document whose file is already missing for
+  some other reason doesn't throw here).
+- [x] T081 [US3] `DocumentCommands.Build` (`sb/Cli/DocumentCommands.cs`): compute the output path
+  as `Path.Combine(document.Path, $"{document.Name}.tex")` instead of a hardcoded `"main.tex"`.
+- [x] T082 [P] Update `sb/Tests/DocumentStoreTests.cs` (main.tex-existence assertions now check
+  `<name>.tex`) and `sb/Tests/Cli/DocumentCommandsTests.cs` (`Build` output-path assertion); add a
+  `Rename_RenamesTheTexFileToMatchTheNewName` test.
+- [x] T083 Re-run the isolated end-to-end smoke test once more: `documents create --name mydoc`
+  writes `mydoc.tex` (not `main.tex`); `documents build` overwrites `mydoc.tex` in place. `dotnet
+  test` full suite green.
+
+---
+
+## Phase 11: 2026-09-26 Delta 4 — `sb songs add --text` accepts a file path
+
+**Purpose**: Apply the fourth `/speckit-clarify` round's change (spec.md's fourth bullet, same
+Session 2026-09-26): `--text` accepts either literal text or a path to an existing file, whose
+contents are then used as the song's text. See research.md §8's 2026-09-26 update, data-model.md's
+`Song.Text` note, and `contracts/cli-commands.md`'s `sb songs add`.
+
+- [x] T084 [US2] `SongCommands.Add` (`sb/Cli/SongCommands.cs`): resolve `text` via a private
+  `ResolveText` helper — `File.Exists(text) ? File.ReadAllText(text) : text` — before calling
+  `SongStore.Add`, so `SongStore`/`Song` never see a file path, only resolved text (no change to
+  either).
+- [x] T085 [P] Add tests to `sb/Tests/Cli/SongCommandsTests.cs`:
+  `Add_WithAnExistingFilePathAsText_ReadsItsContentsAsTheLyricText` and
+  `Add_WithLiteralTextThatIsNotAnExistingFile_UsesItAsIs`.
+- [x] T086 [P] Update `sb/specification.md` §2.6.3's `text` flag description and
+  `quickstart.md`'s manual-CLI example to pass a file path directly instead of the
+  `Get-Content -Raw` shell workaround.
+
+---
+
+## Phase 12: 2026-09-26 Delta 5 — remove phrase-splitting; trust the user's line breaks
+
+**Purpose**: Apply the fifth `/speckit-clarify` round's change (spec.md's fifth bullet, same
+Session 2026-09-26) — a functional-requirement-level change, not just planning: the system no
+longer detects "musical phrases" via punctuation. Each of a song's own input lines becomes one
+output line as-is; the system only introduces a line break of its own when a line is too wide for
+the column (FR-004, unchanged). See spec.md's revised FR-003/User Story 1/SC-002, research.md §3's
+2026-09-26 update, data-model.md's removed `Phrase`, and `contracts/latex-output-contract.md`.
+
+- [x] T087 [US1] Delete `sb/Formatting/PhraseSplitter.cs`, `sb/Formatting/Phrase.cs`, and
+  `sb/Tests/PhraseSplitterTests.cs` outright (not kept dormant — Principle I).
+- [x] T088 [US1] Rewrite `LeafletBuilder.RenderSongBlock` (`sb/Leaflets/LeafletBuilder.cs`): split
+  `song.Text` on `\n` directly (trimming each line, skipping blank ones — unchanged from the old
+  whole-line fallback), escape each non-empty line, and wrap it with the existing `LineWrapper`
+  only if it's too wide for `maxWidth` — no tokenizing on sentence punctuation or commas.
+- [x] T089 [P] Update `sb/Tests/LeafletBuilderTests.cs`: rename
+  `Build_MultiColumn_BreaksAnOverlongPhraseAcrossLinesInsteadOfOverflowing` to reflect "line" not
+  "phrase" terminology (behavior unchanged — it already used a single punctuation-free line); add
+  `Build_PreservesTheUsersOwnLineBreaks_WithoutMergingOrSplittingAtPunctuation` asserting that a
+  song with `"first line, with a comma.\nsecond line! more text."` renders both lines verbatim,
+  each ending in its own `\\`, rather than being re-split at the comma/sentence punctuation.
+- [x] T090 [US1] Rewrite `sb/Tests/AggregateAccuracyTests.cs`'s SC-002 test: measure how often a
+  real fixture's own non-empty input lines already fit one output line at the narrower
+  multi-column width (`LineWrapper.Wrap(line, ...).Count == 1`), instead of measuring
+  `PhraseSplitter` output; update the SC-003 test to build its `Column`s from plain non-empty
+  input lines instead of `PhraseSplitter.Split(...)`.
+- [x] T091 [P] Update `sb/specification.md` §2.1 (Formatting) to describe trusting the user's own
+  line breaks, with wrapping only for over-wide lines — removing the phrase-detection language.
+- [x] T092 `dotnet test` full suite green with zero references to `PhraseSplitter`/`Phrase`
+  remaining anywhere in `sb/` (grep-verified).
+
+---
+
+## Phase 13: 2026-09-26 Delta 6 — chapters render as separate `\input`-linked `.tex` files
+
+**Purpose**: Fix a real implementation bug the user's sixth `/speckit-clarify` round identified
+(spec.md's sixth bullet, same Session 2026-09-26): the build had flattened every song directly
+into the main `.tex` file, contrary to `sb/specification.md` §2.5.1/§4 (and this project's own
+template/`data-model.md`/`research.md`, which had described per-chapter `chapter.tex` files
+`\input`'d from the main document as the intended design since 2026-09-11). See research.md §2's
+corrected decision, data-model.md's `LeafletChapter`/`LeafletChapterFile`/`LeafletRequest`/
+`Leaflet`, and both `contracts/leaflet-builder-api.md`/`latex-output-contract.md`.
+
+- [x] T093 [P] Add `LeafletChapter` (`sb/Leaflets/LeafletChapter.cs`: `Name`, `Title?`, `Songs`)
+  and `LeafletChapterFile` (`sb/Leaflets/LeafletChapterFile.cs`: `ChapterName`, `Content`).
+- [x] T094 [US1] Rewrite `LeafletRequest` (`sb/Leaflets/LeafletRequest.cs`): `Chapters`
+  (`IReadOnlyList<LeafletChapter>`) replaces the flat `Songs` list; FR-012's "at least one song"
+  check now sums across all chapters (`chapters.SelectMany(c => c.Songs).Any()`) rather than
+  checking one flat list's count — an individual empty chapter alongside others with songs is
+  still valid, only "every chapter empty" is rejected.
+- [x] T095 [US1] Rewrite `Leaflet` (`sb/Leaflets/Leaflet.cs`): add `ChapterFiles`
+  (`IReadOnlyList<LeafletChapterFile>`) alongside `Songs`/`Document`.
+- [x] T096 [US1] Rewrite `LeafletBuilder.Build` (`sb/Leaflets/LeafletBuilder.cs`, depends on
+  T093–T095): loop over `request.Chapters`, skipping any with zero songs; for each non-empty
+  chapter, run `SongOrderer.Order`/`RenderSongBlock`/column-balancing scoped to that chapter's own
+  songs only (unchanged per-song logic, just no longer applied to one flattened cross-document
+  list), prefix the result with an escaped `\chapter{<Title ?? Name>}` heading, and collect it as
+  a `LeafletChapterFile`; build the main document's content region as one
+  `\input{Chapters/<name>/chapter.tex}` line per chapter file instead of embedding song content.
+- [x] T097 [US2/US3] Update `DocumentCommands.Build` (`sb/Cli/DocumentCommands.cs`, depends on
+  T096): construct one `LeafletChapter` per `chapters.List(documentName)` entry (songs from
+  `songs.List(documentName, chapter.Name)`, since `ChapterStore.List`'s own `Chapter.Songs` is
+  always empty); after `LeafletBuilder.Build`, write each `LeafletChapterFile` to
+  `<chapters.ResolveChapterPath(...)>/chapter.tex` before writing the main document.
+- [x] T098 [P] Rewrite `sb/Tests/LeafletBuilderTests.cs` for the new `LeafletChapter`-based API
+  (a `OneChapter(...)` helper wraps existing flat-song-list tests in a single chapter so their
+  assertions carry over unchanged); add new tests: multiple chapters each get their own
+  `chapter.tex` with a `\chapter{...}` heading and a matching `\input` line in the main document
+  (which never contains song content directly), a chapter with no `Title` falls back to its
+  `Name`, an empty chapter is skipped entirely, and single-song-per-chapter `MultiColumn` chapters
+  never render a `minipage` (nothing in the same chapter to pair with).
+- [x] T099 [P] Update `sb/Tests/Cli/DocumentCommandsTests.cs`: the existing "writes main.tex"
+  test now asserts the main document contains the `\input` line (not song text directly); add a
+  test asserting `documents build` writes a chapter's own `chapter.tex` starting with its
+  `\chapter{...}` heading and containing that chapter's songs.
+- [x] T100 `dotnet test` full suite green.
+
+---
+
+## Phase 14: 2026-09-26 Delta 7 — required flags become arguments; remaining flags get aliases
+
+**Purpose**: Apply the seventh `/speckit-clarify` round's change (spec.md's seventh bullet, same
+Session 2026-09-26): every previously-required `--flag` across the whole CLI surface becomes a
+positional argument; every remaining (optional) flag gains a single-letter alias. Purely a
+`CliRoot.cs` wiring change — `sb/specification.md` §2.6 already left "flag vs. argument" to the
+implementer, so no FR wording changes. See research.md §8's updated command-surface list and the
+rewritten `contracts/cli-commands.md`.
+
+- [x] T101 [US2/US3] Rewrite `sb/Cli/CliRoot.cs`: every `Option<T>` that had `Required = true`
+  becomes an `Argument<T>` added to the command's `Arguments` (in the order matching the
+  corresponding `Cli/*Commands.cs` method's parameter order); every remaining `Option<T>` gains a
+  second constructor argument (its single-letter alias), scoped independently per command (e.g.
+  `-m` means `--melody` in `songs add`/`modify` but `--max-permutations` in `documents build` —
+  no collision, since `System.CommandLine` scopes an `Option`'s aliases to the `Command` it's
+  added to). `chapters remove`'s pre-existing variadic `names` argument now follows the new
+  `document-name` argument (a variadic argument must be last). No changes to `Cli/*Commands.cs`
+  or any store/engine code — this is confined entirely to argument/option wiring.
+- [x] T102 [P] Verify via `dotnet run -- <command> --help` for `documents create`, `documents
+  build`, `songs add`, `chapters remove`, and `songs modify` that the rendered usage line and
+  Arguments/Options sections match the new shape; run a full isolated create→add-chapter→add-song
+  →list→build→remove→delete flow through the actual CLI (not just `Cli/*Commands.cs` directly) to
+  confirm parsing and end-to-end behavior, then clean up.
+- [x] T103 `dotnet test` full suite green — unaffected, since every existing test calls
+  `Cli/*Commands.cs` directly, never through `CliRoot`'s `System.CommandLine` parsing.
+
+---
+
+## Phase 15: 2026-09-26 Delta 8 — a blank song line renders as a blank output line
+
+**Purpose**: Fix a real bug the user's eighth `/speckit-clarify` round identified (spec.md's
+eighth bullet, same Session 2026-09-26): a blank line within a song's text (e.g. a stanza
+separator) was silently dropped from the built leaflet instead of rendering as a blank line. See
+research.md §3's addendum and `contracts/latex-output-contract.md`'s single-column section.
+
+- [x] T104 [US1] `LeafletBuilder.RenderSongBlock` (`sb/Leaflets/LeafletBuilder.cs`): a blank
+  (trimmed-empty) input line now appends **two** empty strings to the column's line list, instead
+  of `continue`-ing past it — two blank physical lines after the preceding line's `\\` are needed
+  for LaTeX to actually render one visible empty line in this plain `\\`-terminated content.
+- [x] T105 [P] Add `Build_RendersABlankInputLine_AsTwoBlankOutputLines_AfterTheLineBreak` to
+  `sb/Tests/LeafletBuilderTests.cs`: a song with `"first stanza\n\nsecond stanza"` renders
+  `"first stanza\\"` immediately followed by two blank lines, then `"second stanza\\"`.
+- [x] T106 `dotnet test` full suite green.
+
+---
+
+## Phase 16: 2026-09-26 Delta 9 — `documents build`'s `ordering` becomes an optional positional argument
+
+**Purpose**: Apply the ninth `/speckit-clarify` round's change (spec.md's ninth bullet, same
+Session 2026-09-26): `--ordering`/`-o` becomes an optional positional argument (`sb documents
+build <document-name> [ordering]`), keeping its `as-listed` default and existing
+`as-listed`/`space-efficient` validation — a deliberate one-off exception to Phase 14's general
+"required → argument, optional → option" rule. See research.md §8's updated command-surface list
+and `contracts/cli-commands.md`.
+
+- [x] T107 [US3] `sb/Cli/CliRoot.cs`: replace the `orderingOption` (`Option<string>` with
+  `Required` unset, `DefaultValueFactory = _ => "as-listed"`) with an `orderingArgument`
+  (`Argument<string>` with the same `DefaultValueFactory`), added to `build.Arguments` right after
+  `buildDocumentNameArgument` (it's the last positional argument in `build`, so making it optional
+  creates no parsing ambiguity). `ParseOrdering`'s error message no longer says `--ordering` (it's
+  not a flag anymore).
+- [x] T108 [P] Verify via `dotnet run -- documents build --help` that `ordering` appears as an
+  optional positional argument with the correct default in the help text; run an isolated
+  build with no `ordering` given (defaults to `as-listed`), with `space-efficient` given
+  explicitly, and with an invalid value (still rejected descriptively), then clean up.
+- [x] T109 `dotnet test` full suite green — unaffected, since no existing test exercises
+  `CliRoot`'s `System.CommandLine` parsing directly.
+
+---
+
+## Phase 17: 2026-09-27 Delta 10 — sequential column-fill, long-song pagination (FR-025/FR-026); A4 confirmed
+
+**Purpose**: Apply the tenth `/speckit-clarify` round's changes, driven by the project's own
+working notes on multi-column layout for long songs (`notes`, repo root), **as corrected by
+`/speckit-analyze` finding U1's remediation** (a follow-up user clarification revealed the general
+multi-column model was never one-song-per-column-per-row): (1) `as-listed` ordering never
+reorders songs, only page/column break placement may adjust (FR-006 revision, research.md §16 —
+`SongOrderer`'s *output order* itself needs no change); (2) multi-column layout fills each column
+*sequentially* with as many whole songs as fit — not one song per column per row — per
+`PageMetrics.LinesPerPage` (research.md §5, supersedes T019); (3) within that general algorithm, a
+song too long to fit in its current column is chunked across as many further columns/pages as
+needed, with a *starting*-page placement rule based on physical-page parity (FR-025,
+research.md §15) — it never reserves a whole page exclusively for one song; (4) page/column
+capacity (`LinesPerPage`) is derived from `sb/template-main.tex`'s own `geometry` margins and
+`\fontsize` at build time, never hardcoded (FR-026, research.md §14); (5) the paper size feeding
+that calculation is a fixed A4 constant (≈845.05pt height), since the user confirmed
+`template-main.tex`'s `geometry` package will always specify `a4paper` (already added to the
+template); (6) `SongOrderer.SpaceEfficient`'s cost function (T045) is corrected to score
+candidate orderings by simulating this same real column-fill packing, replacing its stale
+pairwise-adjacent approximation. See data-model.md's new `SongBlock`/`PageLayout` entities and
+revised `Column`, and both `contracts/leaflet-builder-api.md`/`latex-output-contract.md`'s
+updated pre/postconditions.
+
+- [X] T110 [P] Add `PageMetrics` (`sb/Leaflets/PageMetrics.cs`): an immutable holder for
+  `PaperHeightPt`, `TopMarginPt`, `BottomMarginPt`, `BaselineSkipPt`, `UsableHeightPt`,
+  `LinesPerPage` (data-model.md's `PageMetrics` field table, FR-026).
+- [X] T111 [US1] Add `PageMetricsReader` (`sb/Leaflets/PageMetricsReader.cs`, depends on T110):
+  given a template's raw text, parse the `geometry` package's `tmargin` option (falling back to
+  the single `margin` key if `tmargin` is absent) and `bmargin` option (same fallback), each
+  followed by a unit — only `in` and `pt` need be supported (`1in = 72.27pt`, research.md §14) —
+  and the top-level `\fontsize{<size>}{<baselineskip>}` command's second argument (already in
+  `pt`); use a fixed A4 paper-height constant (`845.05` pt — research.md §14; NOT detected from a
+  `geometry` paper-size keyword) for `PaperHeightPt`; compute `UsableHeightPt = PaperHeightPt -
+  TopMarginPt - BottomMarginPt` and `LinesPerPage = floor(UsableHeightPt / BaselineSkipPt)`; throw
+  a descriptive `InvalidOperationException` (mirroring `DocumentTemplate.Load`'s existing
+  missing-placeholder failure mode) if the `geometry` options or `\fontsize` command are missing
+  or unparseable.
+- [X] T112 [P] Add `SongBlock` (`sb/Leaflets/SongBlock.cs`): an immutable holder for `Lines`
+  (`string[]`) and `HeightInLines` (int) — one song's own rendered content, the atomic unit the
+  new column-fill algorithm packs (data-model.md's `SongBlock`). Update
+  `LeafletBuilder.RenderSongBlock` to return `SongBlock` instead of `Column` (same fields; only
+  the type name/role changes — `Column` now means something different, see T113).
+- [X] T113 [US1] Add `PageLayout` (`sb/Leaflets/PageLayout.cs`, depends on T110): an immutable
+  holder for `Pages` (`IReadOnlyList<(Column Left, Column? Right)>`) and `PagesConsumed` (int —
+  `Pages.Count`; a page is consumed as soon as any content lands on it, even partially filled —
+  this is what `/speckit-analyze` finding U2 required be made explicit, so the next chapter's
+  starting-page parity is never miscounted by rounding down a partially-filled last page).
+- [X] T114 [US1] Rewrite `ColumnBalancer` (`sb/Leaflets/ColumnBalancer.cs`, depends on T112, T113):
+  replace the two-`Column`-at-a-time `RenderRow` with a chapter-scoped entry point —
+  `Fill(IReadOnlyList<SongBlock> songBlocks, PageMetrics metrics, int startingPageNumber) ->
+  PageLayout` — that fills each page's left column, then right column, then the next page's left
+  column, and so on, with consecutive `SongBlock`s in order: each `SongBlock` is appended to the
+  current column if it fits within `PageMetrics.LinesPerPage` minus what's already there;
+  otherwise column-filling moves to the next column/page before placing it (research.md §5). A
+  `SongBlock` whose own `HeightInLines` exceeds `LinesPerPage` is chunked into consecutive pieces
+  of at most `LinesPerPage` lines, occupying the rest of its current column and then as many
+  further whole columns/pages as needed, until exhausted — after which column-filling resumes
+  normally with whatever `SongBlock` comes next, which MAY land in the same column right after it
+  (FR-025 — a page/column is never reserved exclusively for one song, `/speckit-analyze` finding
+  U1). Layer FR-025's one additional constraint on top: if a `SongBlock` that doesn't fit in the
+  current column would otherwise start mid-page, and the page it would next start on is
+  EVEN-numbered, force a page break first so it starts at the top of that page's left column (no
+  such forcing on an ODD-numbered page). After each page's two columns are finalized, apply
+  `\vspace` to the shorter one so both end at approximately the same height (FR-005/SC-003,
+  unchanged mechanism from the original `RenderRow`). Physical page numbers come from
+  `startingPageNumber` plus pages filled so far within this call.
+  *(FR-005/SC-003 citation superseded 2026-09-28 — SC-003 removed; end-of-column alignment is no
+  longer a hard requirement. `\vspace` here is now a cosmetic finishing step, not the mechanism
+  responsible for using available space — see research.md §5's superseded note and spec.md's new
+  FR-007/SC-012. `GreedyFallback`'s longest-first sort, which T115 below only partially
+  addresses — it fixes the *cost function* used to pick an ordering, not the fallback heuristic
+  itself — still can't satisfy FR-007's front-loading rule for chapters beyond `ExactSearch`'s
+  reach (5+ songs); fixing `GreedyFallback` itself is a follow-up task.)*
+- [X] T115 [US3] Rework `SongOrderer`'s space-efficient cost function
+  (`sb/Ordering/SongOrderer.cs`, depends on T111, T114): replace `ComputeWastedSpace`'s
+  pairwise-adjacent-diff metric and `GreedyFallback`'s simple size-sort with a metric that calls
+  `ColumnBalancer.Fill` (or an equivalent simulation) for each candidate ordering and sums the
+  actual unused vertical space across all resulting pages (`LinesPerPage - <column's actual
+  HeightInLines>`, per page/column) — matching what research.md §4's decision text always said
+  ("minimizing total unused column space... shortest column/page"), which the original pairwise
+  metric never actually measured. `ExactSearch`/`GreedyFallback`'s bounded-search/fallback
+  *structure* is unchanged — only the per-candidate cost calculation. Requires `SongOrderer` to
+  receive a `PageMetrics` (threaded through from wherever it's called, e.g. `LeafletBuilder`)
+  since real waste can no longer be computed without knowing `LinesPerPage`. **Implementation
+  note**: a page with no `Right` column has only one real column's worth of capacity — the cost
+  formula must not charge waste against a phantom column that doesn't exist, or ties get
+  computed incorrectly (caught by `Order_SpaceEfficient_MinimizesRealUnusedColumnSpace_...`
+  failing during implementation and fixed before landing).
+- [X] T116 [US1] Update `LeafletBuilder.Build`/`RenderMultiColumn` (`sb/Leaflets/LeafletBuilder.cs`,
+  depends on T111, T114, T115): derive `PageMetrics` once via `PageMetricsReader` from the same
+  resolved template path already used for `DocumentTemplate.Load`; pass it into `SongOrderer.Order`
+  (T115) and into `ColumnBalancer.Fill` (T114); track a running physical page counter across
+  chapters — starting at 1, and advancing by each chapter's `PageLayout.PagesConsumed` after every
+  non-empty chapter, matching `\chapter`'s own unconditional page break in this `oneside` template
+  (research.md §15) — passing each chapter's starting page number into `ColumnBalancer.Fill`.
+  `SingleColumn` format is unaffected (FR-003/FR-004 already flow as ordinary text, not
+  `minipage`s, so it was never subject to the clipping bug, and doesn't need `PageMetrics`).
+- [X] T117 [P] Add `sb/Tests/PageMetricsReaderTests.cs` (depends on T111): assert parsing the real
+  `sb/template-main.tex` yields `BaselineSkipPt = 14.4`, `TopMarginPt`/`BottomMarginPt` matching
+  its `0.3in`/`0.65in` `tmargin`/`bmargin` values converted at `72.27pt/in`, `PaperHeightPt ≈
+  845.05`, and a `LinesPerPage` computed from those; add a case where `tmargin`/`bmargin` are both
+  absent and only `margin` is given, asserting both fall back to it; add failure cases for a
+  template missing its `geometry` line and one missing `\fontsize`, each throwing a descriptive
+  `InvalidOperationException`.
+- [X] T118 [P] *(item (e)'s "SC-003 regression check" superseded 2026-09-28 — SC-003 removed; see
+  research.md §5's superseded note and spec.md's new FR-007/SC-012. The `\vspace` end-balancing
+  behavior itself is unaffected/still correct to test — only the SC-003 citation is stale.)*
+  Rewrite `sb/Tests/ColumnBalancerTests.cs` for `Fill` (depends on T114): using a
+  small test-supplied `PageMetrics` (e.g. `LinesPerPage = 10`), assert (a) several short
+  `SongBlock`s are stacked into the same column, in order, until the next one wouldn't fit,
+  confirming a column is NOT capped at one song; (b) a `SongBlock` taller than `LinesPerPage`
+  computed to start on an EVEN page starts a fresh page's left column (forcing a break if it
+  would otherwise start mid-page) and its lines split into left-column-then-right-column-then-
+  next-page chunks of exactly `LinesPerPage`, with the *next* `SongBlock` after it allowed to
+  continue filling whatever column space is left over (finding U1 — no page is left exclusively
+  to it); (c) the same oversized `SongBlock` computed to start on an ODD page may start mid-column
+  fill, with its overflow continuing via the same chunking; (d) `PageLayout.PagesConsumed` counts
+  a partially-filled last page as one full page consumed, not rounded down (finding U2); (e) two
+  same-page columns still get `\vspace`-balanced to end within one line's height of each other
+  (SC-003 regression check).
+- [X] T119 [P] Update `sb/Tests/SongOrdererTests.cs`'s `SpaceEfficient` cases (depends on T115):
+  replace assertions written against the old pairwise-adjacent metric with cases built around a
+  small test-supplied `PageMetrics`, confirming the chosen ordering is the one that actually
+  minimizes real unused column space under `ColumnBalancer.Fill`'s packing (not merely balances
+  adjacent-pair sizes) — include a case where the two metrics would have picked different
+  orderings, to prove the fix changes behavior, not just internals. Also updated
+  `LeafletBuilderTests.Build_SpaceEfficient_CanProduceADifferentPhysicalOrderThanAsListed` (its old
+  synthetic song sizes tied under the new real-capacity-aware metric) and
+  `AggregateAccuracyTests.SC003_...` (rewritten against `ColumnBalancer.Fill`/`SongBlock` since
+  `RenderRow`/`Column`-as-song-block no longer exist) — both necessary consequences of this fix,
+  not separately itemized above.
+- [X] T120 [P] Add end-to-end tests to `sb/Tests/LeafletBuilderTests.cs` (depends on T116): (a)
+  long-song pagination — build a `MultiColumn` leaflet using a test-only copy of
+  `template-main.tex` whose `geometry`/`\fontsize` values are chosen so `LinesPerPage` is small
+  and deterministic, containing one song whose line count exceeds it; assert every one of the
+  song's lines appears somewhere in the produced `chapter.tex` (never truncated) and that the
+  even/odd starting-page rule was applied correctly for the page it actually lands on; (b) FR-006's
+  order guarantee (closes `/speckit-analyze` finding G1): in a chapter containing that long song
+  alongside at least one shorter neighbor (placed so the long song lands on an even page and
+  forces a break), the resulting song sequence — read by `SingingOrderNumber` in the order each
+  song's block appears in the rendered `chapter.tex` — exactly matches the chapter's `as-listed`
+  input order, confirming the forced break only moved *where* a break falls, never *which song
+  comes before which*; (c) a chapter with several ordinary (non-long) songs renders more than two
+  songs total across one page's two columns when they're short enough to stack (regression check
+  that sequential column-fill, not row-pairing, is actually wired end-to-end).
+- [X] T121 [P] Add the long-song fixture `sb/Tests/TestFiles/kottar_i_karburatorn.txt` (the
+  example named in the project's working notes) so `quickstart.md`'s manual CLI validation
+  scenario for FR-025/FR-026 has a real long song to build against, independent of the small
+  deterministic fixtures used by T118/T120's automated tests. Also added
+  `sb/Tests/TestFiles/TeX/small-page-template.tex` (a copy of `template-main.tex` with
+  `margin=0in`/`\fontsize{12pt}{150pt}`, giving a small deterministic `LinesPerPage = 5`) so
+  T120's end-to-end tests don't depend on the real template's page geometry.
+- [X] T122 `dotnet test` full suite green — including confirming zero remaining references to
+  `ColumnBalancer.RenderRow` anywhere in `sb/` (grep-verified), since it's fully superseded by
+  `Fill` (T114).
+
+**Implementation addendum (title/lyrics separation)**: while implementing T114/T116, comparing
+`git status` surfaced a new reference file, `sb/Kottar i karburatorn.tex` (the exact example
+named in the project's working notes, "Use example from Kottar i karburatorn.tex"). Re-reading it
+alongside `sb/Tests/TestFiles/TeX/test.tex` revealed both render a song's title/melody as its own
+block, separate from its lyrics — not the combined per-song block every implementation since
+Phase 3 had rendered (including this phase's own T114/T116 as first written). Confirmed with the
+user and implemented as part of this phase (not a new phase): `SongBlock` gained `TitleLineCount`,
+`Column` gained `LeadingTitleLineCount`, and `ColumnBalancer.Render` now splits each page's
+columns into a title-row (paired if both columns start fresh songs there, else rendered alone at
+that column's own width) followed by a body-row. See research.md §5's addendum and
+data-model.md's updated `SongBlock`/`Column` for the full rationale. `dotnet test` re-confirmed
+green after this addendum (126/126) — see T122's re-run.
+
+**Implementation addendum 2 (two rendering bugs found via manual real-world testing)**: manual
+testing with real Swedish-language fixtures (a long song correctly overflowing into a second
+column, a following song correctly continuing onto the next page) surfaced two defects in the
+title/lyrics-separation work above — both confirmed via a minimal LaTeX reproduction compiled with
+the real template (`xelatex`), not just unit tests: (1) a lone title on the *right* column
+rendered with no `\hspace` offset, appearing flush against the left margin instead of under the
+right column (the reported "stray line"); (2) `\paragraph*{...}` (via `titlesec`) silently
+produces no visible output at all when nothing follows it in the same paragraph — exactly the case
+for any title with no melody line, once extracted into its own box. Fixed:
+`ColumnBalancer.RenderLoneMinipage` now takes an optional preceding-offset width for a lone right
+box, and every extracted title gets a trailing `\mbox{}`. Added three focused
+`ColumnBalancerTests` cases constructing `PageLayout`/`Column` directly (decoupled from `Fill`,
+whose packing logic was unaffected) to cover both fixes. See research.md §5's second addendum.
+`dotnet test`: 129/129 passing.
+
+**Superseded 2026-09-28**: both addenda above describe the title/lyrics-separation feature
+(`SongBlock.TitleLineCount`/`Column.LeadingTitleLineCount`, and the title-row-then-body-row
+rendering it enabled) as shipped, current behavior. It was later **reverted** by direct
+instruction — confirmed against `sb/Leaflets/ColumnBalancer.cs`'s own doc comment and the absence
+of both fields from the shipped `SongBlock`/`Column` types: a song's title/melody and lyrics
+render together as one unbroken block again, with no separate leading-title row or cross-column
+title pairing. This revert has no corresponding task/phase of its own — it was never recorded at
+the time it happened. See research.md §5's superseded note and `contracts/latex-output-contract.md`'s
+revised "Title/lyrics rendering" bullet for the current, accurate description.
+
+---
+
+## Phase 18: 2026-09-28 Delta 11 — `GreedyFallback` follows singing order, gap-fills instead of wasting space
+
+**Purpose**: Apply the `/speckit-analyze` I1/I2 remediation's follow-up implementation fix (direct
+user requirement): `space-efficient` mode's greedy fallback (used for any chapter beyond
+`ExactSearch`'s ~4-song reach) should still track singing order as closely as possible, deviating
+from it only where doing so uses column space that would otherwise go to waste. See spec.md's
+revised FR-007/new SC-012 and research.md §4's 2026-09-28 correction.
+
+### Tests for Phase 18 ⚠️
+
+> Per Constitution Principle III (Test-First, NON-NEGOTIABLE), these MUST fail against the
+> pre-fix `GreedyFallback` before T124's implementation lands.
+> *(Process note: in the actual session this task list is drawn from, T123 and T124 were written
+> and landed together in one pass, not strictly test-then-implementation in separate steps — the
+> task order below reflects the correct, intended process, not literal chronology. The resulting
+> tests do fail against the pre-fix longest-first sort and pass against the fix, so the coverage
+> guarantee this rule exists for is satisfied regardless.)*
+
+- [x] T123 [P] [US3] Rewrite `sb/Tests/SongOrdererTests.cs`'s greedy-fallback case (superseding the
+  old `Order_SpaceEfficient_FallsBackToGreedy_BeyondTheMaxPermutationsBound`, which asserted the
+  now-removed longest-first order): `Order_SpaceEfficient_Greedy_PreservesOriginalOrder_WhenEverythingAlreadyFitsOneColumn`
+  confirms zero reordering when no gap-filling is needed; new
+  `Order_SpaceEfficient_Greedy_PullsALaterSmallerSongForward_ToFillAGapInsteadOfLeavingItUnused`
+  confirms a later, smaller song is pulled forward to fill a column gap rather than being deferred.
+
+### Implementation for Phase 18
+
+- [x] T124 [US3] Rewrite `SongOrderer.GreedyFallback` (`sb/Ordering/SongOrderer.cs`, depends on
+  T123): replace the longest-first sort with an order-preserving, gap-filling walk — a song is
+  placed immediately if it fits the current column's remaining capacity; otherwise the largest
+  not-yet-placed song that *does* fit is pulled forward instead (tie-broken by original position),
+  and only once nothing remaining fits does the column close and a fresh one start. `PageMetrics`
+  is now threaded into `GreedyFallback` (previously only `ExactSearch` received it). `ExactSearch`
+  is unchanged — ties already favored the original order via `Permute`'s enumeration order and
+  strict-less-than tie-breaking; make T123 pass.
+- [x] T125 `dotnet test` full suite green (142/142).
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (Phase 1)**: No dependencies — start immediately.
+- **Foundational (Phase 2)**: Depends on Setup — BLOCKS all user stories.
+- **User Story 1 (Phase 3)**: Depends on Foundational only. No dependency on US2/US3/US4.
+- **User Story 2 (Phase 4)**: Depends on Foundational only (uses `Song` from T003, not on US1's
+  engine). Independently testable without US1.
+- **User Story 3 (Phase 5)**: Depends on US1 (`LeafletBuilder`, T025) and US2 (`DocumentStore`/
+  `ChapterStore`/`SongStore`, T035–T038) to implement `sb documents build`; extends US1's
+  `SongOrderer` (T024).
+- **User Story 4 (Phase 6)**: Depends on US2's `SongStore` (T037) and US1's `LeafletBuilder`
+  (T025); independent of US3's ordering logic itself (only shares the `build` command surface).
+- **Polish (Phase 7)**: Depends on all four user stories being complete.
+- **2026-09-26 Delta (Phase 8)**: Depends on Phase 7 (all prior tasks) being complete — it
+  modifies `SongStore`/`Song`/`LocationMismatchDetector` in place and removes Config, so it must
+  land after, not alongside, the tasks it supersedes.
+- **2026-09-26 Delta 2 (Phase 9)**: Independent of Phase 8 (different files: `Document`/
+  `DocumentStore`/`DocumentTemplate`/`LeafletRequest`/`CliRoot` vs. `Song`/`SongStore`/
+  `LocationMismatchDetector`/Config) but sequenced after it here since both landed the same day.
+- **2026-09-26 Delta 3 (Phase 10)**: Depends on Phase 9 (touches the same `DocumentStore`/
+  `DocumentCommands.Build` it just rewrote).
+- **2026-09-26 Delta 4 (Phase 11)**: Independent of Phases 8–10 (different files — `SongCommands`
+  only), sequenced last here since it landed last.
+- **2026-09-26 Delta 5 (Phase 12)**: Independent of Phases 8–11 (different files — `Formatting/`,
+  `LeafletBuilder`), sequenced last since it landed last.
+- **2026-09-26 Delta 6 (Phase 13)**: Depends on Phase 12 (touches the same `LeafletBuilder.cs`
+  Phase 12 just rewrote).
+- **2026-09-26 Delta 7 (Phase 14)**: Independent of Phases 8–13 (touches only `CliRoot.cs`),
+  sequenced last since it landed last.
+- **2026-09-26 Delta 8 (Phase 15)**: Depends on Phase 13 (touches the same `LeafletBuilder.cs`
+  Phase 13 rewrote); independent of Phase 14.
+- **2026-09-26 Delta 9 (Phase 16)**: Depends on Phase 14 (touches the same `CliRoot.cs` build
+  command Phase 14 just rewrote).
+- **2026-09-27 Delta 10 (Phase 17)**: Depends on Phase 13 (touches the same `LeafletBuilder.cs`
+  Phase 13 rewrote to render chapters independently), Phase 15 (the same file's blank-line
+  handling in `RenderSongBlock` must survive this rework), Phase 3 (supersedes `ColumnBalancer`'s
+  original `RenderRow`, T019), and Phase 5 (reworks `SongOrderer`'s `SpaceEfficient` cost function,
+  T045, while keeping its bounded-search/greedy-fallback structure); independent of Phases 14/16
+  (`CliRoot` wiring, untouched here).
+- **2026-09-28 Delta 11 (Phase 18)**: Depends on Phase 5 (rewrites the `GreedyFallback` T045
+  introduced) and Phase 17 (touches the same `SongOrderer.cs` `SpaceEfficient` cost-function rework,
+  T115, though a different method within it — `ComputeWastedSpace`/`ExactSearch` are untouched);
+  independent of all CLI-wiring phases (14/16) and of Phases 8–13/15–16 (different file).
+
+### Within Each User Story
+
+- Tests are written first and MUST fail before implementation (Constitution Principle III).
+- Entities/value types before the components that consume them.
+- Store/engine logic before the CLI command that wires it up.
+
+### Parallel Opportunities
+
+- All Setup tasks marked [P] can run together; all Foundational tasks marked [P] (T003–T009) can
+  run together.
+- Once Foundational is done, US1's and US2's test-writing tasks (T010–T014 and T026–T032) can
+  all run in parallel with each other (different files, no shared dependency) — and, since
+  neither story depends on the other, both stories' implementation tasks can proceed in parallel
+  too if staffed by different people.
+- US3 and US4 each depend on both US1 and US2 being complete, but do not depend on each other for
+  their test-writing tasks (T042–T044 vs. T047–T050 touch different files/behaviors), though
+  T046 (`build` command) should land before US4's CLI-facing tests are exercised end-to-end.
+
+---
+
+## Parallel Example: User Story 1
+
+```bash
+# Launch all test-writing tasks for User Story 1 together:
+Task: "Write failing tests for PhraseSplitter in sb/Tests/PhraseSplitterTests.cs"
+Task: "Write failing tests for LatexEscaper in sb/Tests/LatexEscaperTests.cs"
+Task: "Write failing tests for ColumnBalancer in sb/Tests/ColumnBalancerTests.cs"
+Task: "Write failing tests for SongOrderer (AsListed) in sb/Tests/SongOrdererTests.cs"
+Task: "Write failing end-to-end tests for LeafletBuilder in sb/Tests/LeafletBuilderTests.cs"
+
+# Launch independent value-type creation together:
+Task: "Create Phrase record in sb/Formatting/Phrase.cs"
+Task: "Create Column record in sb/Leaflets/Column.cs"
+Task: "Create LeafletRequest record in sb/Leaflets/LeafletRequest.cs"
+Task: "Create PlacedSong record in sb/Leaflets/PlacedSong.cs"
+Task: "Create Leaflet record in sb/Leaflets/Leaflet.cs"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Complete Phase 1: Setup.
+2. Complete Phase 2: Foundational (CRITICAL — blocks all stories).
+3. Complete Phase 3: User Story 1.
+4. **STOP and VALIDATE**: exercise `LeafletBuilder.Build` directly per its Independent Test.
+5. This is a usable engine MVP even before any CLI/storage exists.
+
+### Incremental Delivery
+
+1. Setup + Foundational → foundation ready.
+2. Add User Story 1 → validate independently (MVP: the formatting/layout engine).
+3. Add User Story 2 → validate independently (documents/chapters/songs exist and are locatable).
+4. Add User Story 3 → validate independently (`sb documents build` with a choice of ordering).
+5. Add User Story 4 → validate independently (singing-order numbers survive everything).
+6. Add Polish → config support and full quickstart validation.
+
+### Parallel Team Strategy
+
+With multiple developers, once Foundational is done: Developer A takes US1 (pure engine, no
+storage dependency), Developer B takes US2 (storage/CLI, no engine dependency) — both can proceed
+fully in parallel and integrate at US3.
+
+---
+
+## Notes
+
+- [P] tasks touch different files and have no unmet dependency on another incomplete task.
+- [Story] labels map every user-story-phase task back to spec.md for traceability.
+- Verify each test fails before writing its implementation (Constitution Principle III).
+- Commit after each task or logical group.
+- Stop at any checkpoint to validate that story independently before moving on.
