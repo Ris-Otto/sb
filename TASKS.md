@@ -54,19 +54,19 @@ instead of inventing synthetic ones.
 
 ## Milestone 2 — Database (FR-1.7, NFR-2.5.6)
 
-- [ ] **2.1** Choose and wire up a persistence mechanism (e.g. SQLite via a lightweight ORM, or hand-rolled) with
-  three tables matching §2.4.3: `documents(id, name, filename, path)`, `chapters(id, document_id, name)`,
+- [x] **2.1** Choose and wire up a persistence mechanism (e.g. SQLite via a lightweight ORM, or hand-rolled) with
+  three tables matching §2.4.3: `documents(id, filename, path)`, `chapters(id, document_id, name)`,
   `songs(id, chapter_id, title, number)`.
   - **Tests**: schema creation test — tables exist with expected columns after initializing a fresh DB.
 
-- [ ] **2.2** Atomic filesystem+DB write helper (FR-1.7.6, NFR-2.5.6): a single entry point that performs a
+- [x] **2.2** Atomic filesystem+DB write helper (FR-1.7.6, NFR-2.5.6): a single entry point that performs a
   filesystem change (create/rename/delete file or folder) and the corresponding DB write together, rolling back
   the filesystem change if the DB write fails (and vice versa).
   - **Tests**: simulate a DB-write failure after a successful filesystem create and assert the filesystem change
     was rolled back (no orphaned folder); simulate a filesystem failure and assert no DB row was committed; a
     successful run leaves both in the expected matching state.
 
-- [ ] **2.3** Mismatch detection (FR-1.7.5): given a DB record whose recorded path doesn't exist on disk, report a
+- [x] **2.3** Mismatch detection (FR-1.7.5): given a DB record whose recorded path doesn't exist on disk, report a
   structured "mismatch" result rather than throwing or silently continuing.
   - **Tests**: DB row pointing at a missing folder → mismatch reported with the right name/path; DB row pointing at
     an existing, correct path → no mismatch reported.
