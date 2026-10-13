@@ -7,10 +7,11 @@ namespace Sb.Tests.Core;
 public class PaginatorTests
 {
     private const int ColumnWidth = 1000; // generous enough that no line ever wraps
+    // Line 2 of every song is empty, ending the first paragraph after one line (A-2).
     private const int LinesPerColumn = 10;
 
     private static Song Make(string title, int textLines) =>
-        Song.Create(title, Enumerable.Range(1, textLines).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void PaginateAsListed_NonPositiveLinesPerColumn_ThrowsImmediately_NeverHangs()
@@ -125,8 +126,9 @@ public class PaginatorTests
             Assert.That(fragmentsForSong, Is.Not.Empty, $"no fragments found for '{song.Title}'");
             Assert.That(fragmentsForSong.Count(f => f.IncludesTitle), Is.EqualTo(1), $"'{song.Title}' title must appear exactly once");
 
-            var reassembledLines = fragmentsForSong.SelectMany(f => f.Lines).ToArray();
-            Assert.That(reassembledLines, Is.EqualTo(song.Text), $"lines lost/duplicated for '{song.Title}'");
+            // An empty line falling exactly on a break is dropped rather than shown as a gap (A-5).
+            var reassembledLines = fragmentsForSong.SelectMany(f => f.Lines).Where(l => l != "").ToArray();
+            Assert.That(reassembledLines, Is.EqualTo(song.Text.Where(l => l != "")), $"lines lost/duplicated for '{song.Title}'");
         }
     }
 }

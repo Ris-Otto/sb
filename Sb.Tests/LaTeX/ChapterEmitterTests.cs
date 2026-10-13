@@ -49,7 +49,7 @@ public class ChapterEmitterTests
 
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
 
-        Assert.That(rendered, Does.Contain("\\paragraph*{Lille Albin}"));
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. Lille Albin}"));
     }
 
     [Test]
@@ -78,7 +78,33 @@ public class ChapterEmitterTests
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], columnWidth: 10);
 
         // LineWrapper would wrap this into 4 sub-lines at columnWidth 10 (verified in LineWrapperTests).
-        Assert.That(CountOccurrences(rendered, "\\\\"), Is.EqualTo(4));
+        // plus one line break ending the title's line.
+        Assert.That(CountOccurrences(rendered, "\\\\"), Is.EqualTo(5));
+    }
+
+    [Test]
+    public void RenderMultiColumn_PrefixesTitleWithSongNumber()
+    {
+        Song song = Song.Create("Titel", ["rad"], 12).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+        var page = new Page(1, [fragment], [], fragment.Height, 0);
+
+        string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
+
+        Assert.That(rendered, Does.Contain("\\paragraph*{12. Titel}"));
+    }
+
+    [Test]
+    public void RenderMultiColumn_PutsTitleMelodyAndWriterOnSeparateLinesAboveLyrics()
+    {
+        Song song = Song.Create("Titel", ["Första raden"], 1, writer: "Skribent", melody: "Tonsättare").Value!;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+        var page = new Page(1, [fragment], [], fragment.Height, 0);
+
+        string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
+
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. Titel}\\mbox{}\\\\\nMel: Tonsättare\\\\\nText: Skribent\\\\\nFörsta raden\\\\".Replace("\n", Environment.NewLine)));
+        Assert.That(fragment.Height, Is.EqualTo(4));
     }
 
     [Test]
@@ -130,8 +156,7 @@ public class ChapterEmitterTests
 
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page1, page2], ColumnWidth);
 
-        Assert.That(rendered, Does.Contain("continued"));
-        Assert.That(rendered, Does.Contain("continued from previous page"));
+        Assert.That(CountOccurrences(rendered, "(forts.)"), Is.EqualTo(2));
     }
 
     [Test]
@@ -146,7 +171,7 @@ public class ChapterEmitterTests
 
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
 
-        Assert.That(rendered, Does.Not.Contain("continued"));
+        Assert.That(rendered, Does.Not.Contain("(forts.)"));
     }
 
     [Test]
@@ -157,8 +182,8 @@ public class ChapterEmitterTests
         string rendered = ChapterEmitter.RenderSingleColumn("Chapter", songs);
 
         Assert.That(rendered, Does.Not.Contain("minipage"));
-        Assert.That(rendered, Does.Contain("\\paragraph*{A}"));
-        Assert.That(rendered, Does.Contain("\\paragraph*{B}"));
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. A}"));
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. B}"));
     }
 
     [Test]

@@ -2,7 +2,7 @@ namespace Sb.Core;
 
 /// <summary>
 /// Simulates filling one page's two columns with as many whole songs as fit (FR-1.2.4), allowing
-/// a song to split across the column 1→2 boundary (FR-1.2.5, via <see cref="SongSplitter"/>) —
+/// a song to split across the column 1→2 boundary (FR-1.3.4, via <see cref="SongSplitter"/>) —
 /// including a song too tall for a single column, which fills column 1 AND column 2 in sequence,
 /// carrying only the genuine excess (beyond both full columns) forward. The space-efficient caller
 /// is expected to have already picked which songs go on this page; this just mechanically places
@@ -11,7 +11,8 @@ namespace Sb.Core;
 /// </summary>
 public static class ColumnFiller
 {
-    public static PageLayout Fill(IReadOnlyList<SongFragment> candidates, int linesPerColumn, int columnWidth)
+    public static PageLayout Fill(
+        IReadOnlyList<SongFragment> candidates, int linesPerColumn, int columnWidth, bool allowPageOverflow = true)
     {
         if (linesPerColumn <= 0)
             throw new ArgumentOutOfRangeException(nameof(linesPerColumn), "Must be positive.");
@@ -37,19 +38,34 @@ public static class ColumnFiller
             int remainingColumn1 = linesPerColumn - column1Lines;
             if (remainingColumn1 > 0)
             {
-                var (firstPart, afterColumn1) = SongSplitter.Split(candidates[index], remainingColumn1, columnWidth);
+                var (firstPart, afterColumn1) = SongSplitter.Split(
+                    candidates[index], remainingColumn1, columnWidth, allowPartialFirstParagraph: column1Lines == 0);
                 if (firstPart is not null)
                 {
-                    column1.Add(firstPart);
-                    column1Lines += firstPart.Height;
-                    index++;
-
+                    SongFragment? secondPart = null;
+                    SongFragment? excess = null;
                     if (afterColumn1 is not null)
                     {
                         // Column 2 is the last column on this page — anything that doesn't fit it
                         // necessarily waits for the next page, so this split is always page-boundary.
-                        var (secondPart, excess) =
+                        (secondPart, excess) =
                             SongSplitter.Split(afterColumn1, linesPerColumn, columnWidth, isPageBoundary: true);
+                        if (secondPart is null && excess is null)
+                            excess = afterColumn1; // nothing of it could be placed; never drop content
+                    }
+
+                    // FR-1.3.6: a song never overflows out of an even page — unless it is too long for
+                    // one page anyway (FR-1.3.15) or is already a continuation. Then it waits whole.
+                    bool forbiddenOverflow = excess is not null && !allowPageOverflow
+                        && !candidates[index].ContinuesFromPreviousPage
+                        && candidates[index].Height <= 2 * linesPerColumn;
+
+                    if (!forbiddenOverflow)
+                    {
+                        column1.Add(firstPart);
+                        column1Lines += firstPart.Height;
+                        index++;
+
                         if (secondPart is not null)
                         {
                             column2.Add(secondPart);

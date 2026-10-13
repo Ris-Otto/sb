@@ -23,8 +23,8 @@ public static class Paginator
 
         while (remaining.Count > 0)
         {
-            PageLayout layout = ColumnFiller.Fill(remaining, linesPerColumn, columnWidth);
             bool isOddPage = pageNumber % 2 == 1;
+            PageLayout layout = ColumnFiller.Fill(remaining, linesPerColumn, columnWidth, allowPageOverflow: isOddPage);
             var column2 = layout.Column2.ToList();
             int column2Lines = layout.Column2Lines;
             IReadOnlyList<SongFragment> nextRemaining = layout.RemainingFragments;

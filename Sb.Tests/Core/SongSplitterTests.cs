@@ -7,9 +7,10 @@ namespace Sb.Tests.Core;
 public class SongSplitterTests
 {
     private const int ColumnWidth = 1000; // generous enough that no line ever wraps
+    // Line 2 of every song is empty, ending the first paragraph after one line (A-2).
 
     private static Song MakeSong(int textLines) =>
-        Song.Create("Title", Enumerable.Range(1, textLines).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song.Create("Title", Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void Split_FitsEntirely_ReturnsWholeFragmentNoRest()
@@ -45,7 +46,7 @@ public class SongSplitterTests
 
         Assert.That(first, Is.Not.Null);
         Assert.That(first!.IncludesTitle, Is.True);
-        Assert.That(first.Lines, Is.EqualTo(new[] { "line 1", "line 2" }));
+        Assert.That(first.Lines, Is.EqualTo(new[] { "line 1", "" }));
         Assert.That(first.Height, Is.EqualTo(3));
     }
 
@@ -87,18 +88,96 @@ public class SongSplitterTests
         Assert.That(remainder!.Song, Is.SameAs(song));
     }
 
+
     [Test]
-    public void Split_TitleOnlyFits_FirstFragmentHasNoLines()
+    public void Split_TitleOnlyFits_RefusesToStartSong()
     {
-        Song song = MakeSong(textLines: 6);
-        var fragment = SongFragment.Whole(song, ColumnWidth);
+        var fragment = SongFragment.Whole(MakeSong(textLines: 6), ColumnWidth);
 
         var (first, remainder) = SongSplitter.Split(fragment, availableLines: 1, ColumnWidth);
 
-        Assert.That(first, Is.Not.Null);
-        Assert.That(first!.Lines, Is.Empty);
-        Assert.That(first.Height, Is.EqualTo(1));
-        Assert.That(remainder!.Lines, Is.EqualTo(song.Text));
+        Assert.That(first, Is.Null);
+        Assert.That(remainder, Is.Null);
+    }
+
+    [Test]
+    public void Split_FirstParagraphDoesNotFit_RefusesToStartSong()
+    {
+        // Paragraph 1 is "a","b","c" (3 lines); title + 2 lines of it fit, which is not enough (A-2).
+        Song song = Song.Create("Title", ["a", "b", "c", "", "d", "e"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+
+        Assert.That(first, Is.Null);
+        Assert.That(remainder, Is.Null);
+    }
+
+    [Test]
+    public void Split_FirstParagraphFits_StartsSong()
+    {
+        Song song = Song.Create("Title", ["a", "b", "c", "", "d", "e"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth);
+
+        Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "c", "" }));
+        Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d", "e" }));
+    }
+
+    [Test]
+    public void Split_FreshColumn_AllowsPartialFirstParagraph()
+    {
+        Song song = Song.Create("Title", ["a", "b", "c", "", "d", "e"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(
+            fragment, availableLines: 3, ColumnWidth, allowPartialFirstParagraph: true);
+
+        Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b" }));
+        Assert.That(remainder, Is.Not.Null);
+    }
+
+    [Test]
+    public void Split_PageBoundary_HeightsIncludeFortsNoticeLines()
+    {
+        // The "(forts.)" notice at the end of the first part and at the start of the remainder are
+        // rendered lines, so they count towards the heights (A-5).
+        Song song = Song.Create("Title", ["a", "b", "", "c", "d", "e"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 6, ColumnWidth, isPageBoundary: true);
+
+        Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "", "c" }));
+        Assert.That(first.Height, Is.EqualTo(1 + 4 + 1), "title + 4 lines + trailing notice");
+        Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d", "e" }));
+        Assert.That(remainder.Height, Is.EqualTo(1 + 2), "leading notice + 2 lines");
+    }
+
+    [Test]
+    public void Split_ColumnBoundary_AddsNoNoticeLines()
+    {
+        Song song = Song.Create("Title", ["a", "b", "", "c", "d", "e"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 6, ColumnWidth);
+
+        Assert.That(first!.Height, Is.EqualTo(1 + 5));
+        Assert.That(remainder!.Height, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Split_ParagraphFitsButNotItsTrailingEmptyLine_StartsSong()
+    {
+        // Paragraph 1 is a,b,c (3 lines); with the title that's 4 lines, and the empty line after it
+        // need not fit (A-5). The empty line at the break is dropped, not shown at the top of the rest.
+        Song song = Song.Create("Title", ["a", "b", "c", "", "d"], 1).Value;
+        var fragment = SongFragment.Whole(song, ColumnWidth);
+
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
+
+        Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "c" }));
+        Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d" }));
     }
 
     [Test]
@@ -161,10 +240,10 @@ public class SongSplitterTests
         // further (e.g. spans a third page) must keep its "continues from previous page" flag.
         Song song = MakeSong(textLines: 6);
         var landing = new SongFragment(
-            song, IncludesTitle: false, ["line 3", "line 4", "line 5", "line 6"], Height: 4,
+            song, IncludesTitle: false, ["line 3", "line 4", "line 5", "line 6"], Height: 5,
             ContinuesFromPreviousPage: true);
 
-        var (first, remainder) = SongSplitter.Split(landing, availableLines: 2, ColumnWidth, isPageBoundary: true);
+        var (first, remainder) = SongSplitter.Split(landing, availableLines: 4, ColumnWidth, isPageBoundary: true);
 
         Assert.That(first!.ContinuesFromPreviousPage, Is.True, "still resumes from the earlier page");
         Assert.That(first.ContinuesOnNextPage, Is.True, "and now also continues onto yet another page");

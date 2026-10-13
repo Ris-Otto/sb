@@ -60,7 +60,7 @@ public static class ChapterEmitter
 
         foreach (Song song in songs)
         {
-            sb.AppendLine($"\\paragraph*{{{LaTeXText.Escape(song.Title)}}}");
+            AppendHeader(sb, song);
             foreach (string line in song.Text)
                 sb.AppendLine($"{LaTeXText.Escape(line)}\\\\");
         }
@@ -68,13 +68,24 @@ public static class ChapterEmitter
         return sb.ToString();
     }
 
+    // \paragraph* is a run-in heading, so \mbox{}\\ is needed to end its line; otherwise the first
+    // lyric line would follow the title on the same line. Melody and writer get their own lines.
+    private static void AppendHeader(StringBuilder sb, Song song)
+    {
+        sb.AppendLine($"\\paragraph*{{{song.Number}. {LaTeXText.Escape(song.Title)}}}\\mbox{{}}\\\\");
+        if (!string.IsNullOrWhiteSpace(song.Melody))
+            sb.AppendLine($"Mel: {LaTeXText.Escape(song.Melody)}\\\\");
+        if (!string.IsNullOrWhiteSpace(song.Writer))
+            sb.AppendLine($"Text: {LaTeXText.Escape(song.Writer)}\\\\");
+    }
+
     private static void AppendFragment(StringBuilder sb, SongFragment fragment, int columnWidth)
     {
         if (fragment.ContinuesFromPreviousPage)
-            sb.AppendLine("\\textit{(continued from previous page)}\\\\");
+            sb.AppendLine("\\textit{(forts.)}\\\\");
 
         if (fragment.IncludesTitle)
-            sb.AppendLine($"\\paragraph*{{{LaTeXText.Escape(fragment.Song.Title)}}}");
+            AppendHeader(sb, fragment.Song);
 
         foreach (string line in fragment.Lines)
         {
@@ -83,6 +94,6 @@ public static class ChapterEmitter
         }
 
         if (fragment.ContinuesOnNextPage)
-            sb.AppendLine("\\textit{(continued)}\\\\");
+            sb.AppendLine("\\textit{(forts.)}\\\\");
     }
 }

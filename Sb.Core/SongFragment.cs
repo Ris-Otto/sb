@@ -3,8 +3,9 @@ namespace Sb.Core;
 /// <summary>
 /// A contiguous slice of a song placed in one column: either the whole song, or a piece of one
 /// when it's split across a column/page boundary (FR-1.3.4, FR-1.3.5). <see cref="IncludesTitle"/>
-/// is true only for the fragment that starts the song (the one carrying its `\paragraph*` title
-/// line) — a continuation fragment is pure text, since the title isn't re-rendered.
+/// is true only for the fragment that starts the song (the one carrying its header: title, melody
+/// and writer lines) — a continuation fragment is pure text, since the header isn't re-rendered.
+/// <see cref="Height"/> counts every rendered line, including the `(forts.)` notice lines (A-5).
 ///
 /// <see cref="ContinuesOnNextPage"/>/<see cref="ContinuesFromPreviousPage"/> distinguish a
 /// page-boundary split (FR-1.3.5, FR-1.3.15 — needs a reader-facing continuation notice,

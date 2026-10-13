@@ -6,13 +6,13 @@ namespace Sb.Tests.Core;
 [TestFixture]
 public class ColumnFillerTests
 {
-    // One title line + N text lines, with columnWidth generous enough that no wrapping occurs,
+    // (Line 2 of every song is blank, so a paragraph ends there: see A-2.) One title line + N text lines, with columnWidth generous enough that no wrapping occurs,
     // so each song's height is exactly (1 + N) and tests can reason about exact line counts.
     private const int ColumnWidth = 1000;
 
     private static SongFragment Make(string title, int textLines, int number = 1)
     {
-        Song song = Song.Create(title, Enumerable.Range(1, textLines).Select(i => $"line {i}").ToArray(), number).Value;
+        Song song = Song.Create(title, Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), number).Value;
         return SongFragment.Whole(song, ColumnWidth);
     }
 
@@ -130,6 +130,45 @@ public class ColumnFillerTests
         Assert.That(layout.Column1[1].ContinuesOnNextPage, Is.False);
         Assert.That(layout.Column2[0].ContinuesOnNextPage, Is.True);
         Assert.That(excess.ContinuesFromPreviousPage, Is.True);
+    }
+
+    [Test]
+    public void Fill_EvenPage_SongThatWouldSpillOutOfPageWaitsWhole()
+    {
+        // FR-1.3.6: b (17 lines) fits on a fresh page, so it must not overflow out of an even page.
+        SongFragment a = Make("A", textLines: 5);  // height 6
+        SongFragment b = Make("B", textLines: 16); // height 17
+
+        var layout = ColumnFiller.Fill([a, b], linesPerColumn: 10, ColumnWidth, allowPageOverflow: false);
+
+        Assert.That(layout.Column1, Is.EqualTo(new[] { a }));
+        Assert.That(layout.Column2, Is.Empty);
+        Assert.That(layout.RemainingFragments, Is.EqualTo(new[] { b }), "b moves whole to the next page");
+    }
+
+    [Test]
+    public void Fill_OddPage_SameSongSpillsOntoNextPage()
+    {
+        SongFragment a = Make("A", textLines: 5);
+        SongFragment b = Make("B", textLines: 16);
+
+        var layout = ColumnFiller.Fill([a, b], linesPerColumn: 10, ColumnWidth, allowPageOverflow: true);
+
+        Assert.That(layout.Column2, Is.Not.Empty);
+        Assert.That(layout.RemainingFragments[0].ContinuesFromPreviousPage, Is.True);
+    }
+
+    [Test]
+    public void Fill_EvenPage_SongLongerThanAPageStillSpills()
+    {
+        // FR-1.3.15: no alternative placement exists for a song taller than a whole page.
+        SongFragment a = Make("A", textLines: 5);
+        SongFragment huge = Make("Huge", textLines: 30); // height 31 > 20
+
+        var layout = ColumnFiller.Fill([a, huge], linesPerColumn: 10, ColumnWidth, allowPageOverflow: false);
+
+        Assert.That(layout.Column2, Is.Not.Empty);
+        Assert.That(layout.RemainingFragments, Has.Count.EqualTo(1));
     }
 
     [Test]

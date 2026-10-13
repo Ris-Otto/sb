@@ -20,6 +20,7 @@ public static class SpaceEfficientPaginator
 
         while (pool.Count > 0 || carryOver is not null)
         {
+            bool isOddPage = pageNumber % 2 == 1;
             var pageCandidates = new List<SongFragment>();
             int capacity = 2 * linesPerColumn;
 
@@ -39,12 +40,8 @@ public static class SpaceEfficientPaginator
                 int capacityForOthers = capacity - SongLayout.Height(longest, columnWidth);
                 if (capacityForOthers > 0 && pool.Count > 0)
                 {
-                    var ffd = FirstFitDecreasing.Fill(pool, capacityForOthers, columnWidth);
-                    IReadOnlyList<Song> chosen = ffd.MetTarget
-                        ? ffd.Selected
-                        : SubsetSumSearch.FindBestFit(pool, capacityForOthers, columnWidth).Selected;
-
-                    foreach (Song song in chosen)
+                    foreach (Song song in ChooseCompanions(
+                        pageCandidates, pool, capacityForOthers, linesPerColumn, columnWidth, isOddPage))
                     {
                         pageCandidates.Add(SongFragment.Whole(song, columnWidth));
                         pool.Remove(song);
@@ -52,20 +49,20 @@ public static class SpaceEfficientPaginator
                 }
             }
 
-            // The selection above always totals <= 2*linesPerColumn, so the only way
-            // layout.RemainingFragments is non-empty is an oversized carry-over (a song whose
-            // continuation alone exceeds a full page) — handled below rather than assumed away.
-            PageLayout layout = ColumnFiller.Fill(pageCandidates, linesPerColumn, columnWidth);
+            // The selection totals <= 2*linesPerColumn by height, but placement can still leave
+            // fragments over: an oversized carry-over, a song that can't start where only a stub would
+            // fit (FR-1.3.17), or a song that may not spill out of an even page (FR-1.3.6). All of
+            // these are handled below rather than assumed away.
+            PageLayout layout = ColumnFiller.Fill(pageCandidates, linesPerColumn, columnWidth, allowPageOverflow: isOddPage);
             var column2 = layout.Column2.ToList();
             int column2Lines = layout.Column2Lines;
-            bool isOddPage = pageNumber % 2 == 1;
 
             if (layout.RemainingFragments.Count > 0)
             {
                 // Carry the unplaced piece forward rather than silently dropping it (NFR-2.5.3).
-                // Everything after it is guaranteed to still be a whole, unsplit fragment (only the
-                // lead carry-over can be mid-song here), so it's safe to return those songs to the
-                // pool for a fresh longest-first/FFD/exact-search attempt on a later page.
+                // Everything after it is still a whole, unsplit fragment (only a split song's excess
+                // is mid-song, and that is always first), so it's safe to return those songs to the
+                // pool for a fresh attempt on a later page.
                 carryOver = layout.RemainingFragments[0];
                 pool.AddRange(layout.RemainingFragments.Skip(1).Select(fragment => fragment.Song));
             }
@@ -92,5 +89,65 @@ public static class SpaceEfficientPaginator
         }
 
         return pages;
+    }
+
+    /// <summary>
+    /// Picks the pool songs to share a page with <paramref name="lead"/>. Candidate sets come from
+    /// FFD and from the exact subset-sum search at a range of capacities (a set that sums
+    /// to the capacity can still be unplaceable, since a song may only start where a whole paragraph
+    /// fits — FR-1.3.17), and each is tried in a few orders. Every attempt is scored by actually
+    /// placing it with <see cref="ColumnFiller"/>, so the winner is the one that really fills the most
+    /// lines, not merely the one whose heights add up best.
+    /// </summary>
+    private static IReadOnlyList<Song> ChooseCompanions(
+        IReadOnlyList<SongFragment> lead, IReadOnlyList<Song> pool, int capacity, int linesPerColumn, int columnWidth,
+        bool isOddPage)
+    {
+        int pageCapacity = 2 * linesPerColumn;
+        var attempted = new HashSet<string>();
+        IReadOnlyList<Song> best = [];
+        int bestScore = -1;
+
+        bool TryOrdered(IReadOnlyList<Song> set)
+        {
+            foreach (IReadOnlyList<Song> ordered in Orderings(set, columnWidth))
+            {
+                string key = string.Join(",", ordered.Select(song => pool.ToList().IndexOf(song)));
+                if (!attempted.Add(key))
+                    continue;
+
+                var candidates = lead.Concat(ordered.Select(song => SongFragment.Whole(song, columnWidth))).ToList();
+                PageLayout layout = ColumnFiller.Fill(candidates, linesPerColumn, columnWidth, allowPageOverflow: isOddPage);
+                int score = layout.Column1Lines + layout.Column2Lines;
+                if (score > bestScore)
+                {
+                    best = ordered;
+                    bestScore = score;
+                }
+            }
+
+            return bestScore >= pageCapacity * SpaceEfficiency.FillTarget;
+        }
+
+        // Fast path (FR-1.3.12): FFD first; if the page actually fills to target, no further search.
+        if (TryOrdered(FirstFitDecreasing.Fill(pool, capacity, columnWidth).Selected))
+            return best;
+
+        // Exact search at the full capacity and at progressively smaller ones; the smaller ones find
+        // sets that leave slack for the paragraph rule to be satisfied.
+        for (int cap = capacity; cap >= Math.Max(1, capacity - linesPerColumn); cap--)
+        {
+            if (TryOrdered(SubsetSumSearch.FindBestFit(pool, cap, columnWidth).Selected))
+                break;
+        }
+
+        return best;
+    }
+
+    private static IEnumerable<IReadOnlyList<Song>> Orderings(IReadOnlyList<Song> set, int columnWidth)
+    {
+        yield return set;
+        yield return set.OrderByDescending(song => SongLayout.Height(song, columnWidth)).ToList();
+        yield return set.OrderBy(song => SongLayout.Height(song, columnWidth)).ToList();
     }
 }

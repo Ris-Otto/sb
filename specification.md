@@ -82,6 +82,12 @@ directly, there is no permutation count to bound or tune, and no separate fallba
 exhausted search — if the remaining songs genuinely cannot reach 95% (e.g. too few songs are left in the chapter),
 the best achievable fill for that page is used.
 
+The height-based search alone is not enough: a set whose heights sum to the page capacity can still be unplaceable,
+since a song may only be started where one whole paragraph fits (§4.3, A-2) and a column can end a few lines short.
+Candidate sets (from FFD and from the exact search at the full capacity and at progressively smaller ones, each in a
+few orderings) are therefore each evaluated by simulating the real column fill, and the set that places the most lines
+on the page is chosen. FFD is still tried first and used as-is if its simulated page reaches 95%.
+
 Essentially, the goal of the space-efficient algorithm is to need to insert as little \vspace{...} as possible.
 
 ### 2.3 Numbering
@@ -318,10 +324,31 @@ Each song has atleast a title, and that title is a LaTeX
 `\paragraph*{{name}}`. The text of the song is then inserted under
 the title as free text.
 
+Because `\paragraph*` is a run-in heading (the following text would start on the same line), the title is
+emitted as `\paragraph*{{name}}\mbox{}\\` so that it occupies a line of its own. The song's header consists of
+separate lines, in this order, all above the lyrics:
+
+1. the title, prefixed with the song's number: `1. Title` (A-4)
+2. the melody, prefixed `Mel: ` (only if the song has a melody)
+3. the writer, prefixed `Text: ` (only if the song has a writer)
+
+The header lines count towards the song's height when filling columns and pages (§2.1, §2.2), and
+only the first fragment of a split song carries the header (see `addendums.md`, A-1).
+
 When a song's content is split across a page boundary (§2.2), a continuation notice is inserted: one marker at the
-end of the fragment that breaks off (e.g. "(continued)"), and another at the start of the fragment that resumes
-(e.g. "(continued from previous page)"). No notice is needed when a song only splits from column 1 to column 2
+end of the fragment that breaks off (`(forts.)`), and another at the start of the fragment that resumes
+(also `(forts.)`). No notice is needed when a song only splits from column 1 to column 2
 within the same page.
+
+A song is only started in a column or page slot if at least one whole paragraph (the lines up to the first empty
+line) fits there together with its header; otherwise it moves on to the next slot, so a column never ends with just a
+title and a stub (see `addendums.md`, A-2). The empty line ending the paragraph need not fit, and an empty line
+falling exactly on a break is dropped. A fresh, empty column 1 is exempt, so a song with an oversized first
+paragraph still gets placed.
+
+The `(forts.)` notice lines are rendered lines and count towards heights and line budgets like any other line
+(A-5). The even-page rule holds in both ordering modes: a song that would spill out of an even page, but fits on one
+page, moves whole to the next page.
 
 ### 4.4 Encoding
 

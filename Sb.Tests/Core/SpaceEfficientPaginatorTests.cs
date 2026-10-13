@@ -9,8 +9,9 @@ public class SpaceEfficientPaginatorTests
     private const int ColumnWidth = 1000; // generous enough that no line ever wraps
     private const int LinesPerColumn = 10;
 
+    // Line 2 of every song is empty, ending its first paragraph after one line (A-2).
     private static Song Make(string title, int height) =>
-        Song.Create(title, Enumerable.Range(1, height - 1).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, height - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void Paginate_NonPositiveLinesPerColumn_ThrowsImmediately_NeverHangsOrGrowsUnbounded()
@@ -105,6 +106,21 @@ public class SpaceEfficientPaginatorTests
 
         var smallFragments = allFragments.Where(f => f.Song == small).ToList();
         Assert.That(smallFragments.SelectMany(f => f.Lines).ToArray(), Is.EqualTo(small.Text));
+    }
+
+    [Test]
+    public void Paginate_ChoosesSetThatReallyPlaces_NotJustOneWhoseHeightsAddUp()
+    {
+        // Single-paragraph songs (no empty line) can't be split (A-2). With A (8) leading, column 1 has
+        // 2 lines left that nothing can use, so C+D (6+6 = 12, a perfect height fit) would leave D
+        // unplaceable in column 2 (10 lines); C+E (6+4 = 10) is what actually fills the page.
+        static Song Single(string title, int height) =>
+            Song.Create(title, Enumerable.Range(1, height - 1).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song a = Single("A", 8), b = Single("B", 7), c = Single("C", 6), d = Single("D", 6), e = Single("E", 4);
+
+        var pages = SpaceEfficientPaginator.Paginate([a, b, c, d, e], linesPerColumn: 10, ColumnWidth);
+
+        Assert.That(pages[0].Column1Lines + pages[0].Column2Lines, Is.EqualTo(18));
     }
 
     [Test]

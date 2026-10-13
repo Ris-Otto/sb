@@ -37,7 +37,8 @@ it shall not overflow or truncate the line.
 - FR-1.3.3: The ordering mode shall be user-selectable (e.g. via a `build` flag/argument).
 - FR-1.3.4: A song may overflow from the first column of a page into the second column.
 - FR-1.3.5: On an odd (left-side) page, a song may overflow from the second column into the next page.
-- FR-1.3.6: A song shall never overflow out of an even (right-side) page.
+- FR-1.3.6: A song shall never overflow out of an even (right-side) page: if it would, and it fits on a single page,
+it shall instead move whole to the next page (unless FR-1.3.15 applies). This holds for both ordering modes. (A-5.)
 - FR-1.3.7: "As-listed" ordering shall insert songs in the exact order given by the user, subject to the overflow 
 caveats (FR-1.3.4–1.3.6).
 - FR-1.3.8: The space-efficient algorithm shall place the chapter's longest remaining song first on each new page, 
@@ -65,6 +66,17 @@ parity, since no alternative placement exists.
 continuation notice is shown to the reader, marking both where the song breaks off and where it resumes. A split 
 from column 1 to column 2 within the same page (FR-1.3.4) requires no such notice, since both halves are visible 
 on the same page at once.
+- FR-1.3.17: A song shall only be started (given a title) in a column or page slot if at least one whole paragraph of
+its text fits there, a paragraph being the lines up to the next empty line (a song with no empty line is a single
+paragraph). The empty line terminating the paragraph need not fit; an empty line falling exactly on a break is
+dropped rather than shown as a gap at the top of the next column/page. Otherwise the whole song moves on to the next
+slot, rather than leaving a title and a stub as the last lines of a column. The exception is a fresh, empty column 1,
+where the song starts regardless, so that a song whose first paragraph is taller than a column cannot stall
+pagination. (Addendum A-2, A-5.)
+- FR-1.3.18: The space-efficient selection (FR-1.3.11, FR-1.3.12) shall take FR-1.3.17 into account: a set of songs
+whose heights merely sum to the page capacity is not enough if it cannot actually be placed. Each candidate set shall
+be evaluated by simulating its real placement (including song splitting), and the set that places the most lines on
+the page shall be chosen. The 95% fill target (FR-1.3.10) is measured on lines actually placed. (Addendum A-2.)
 
 ### 1.4 Numbering
 
@@ -177,15 +189,28 @@ given a required document name and song title.
 - FR-1.12.5: Chapters shall be emitted as unnumbered LaTeX chapters, using `\chapter*{{name}}` rather than `\chapter{{name}}` — the outer braces are LaTeX's own command-argument delimiters, and the inner `{name}` is the substitution placeholder for the chapter's display title.
 - FR-1.12.6: Each song shall be rendered inside a minipage acting as a column.
 - FR-1.12.7: Every song shall have at least a title, emitted as a LaTeX `\paragraph*{{name}}` command — again, the outer braces are LaTeX's delimiters and `{name}` is the placeholder for the song's title.
-- FR-1.12.8: A song's text shall be inserted as free text directly beneath its title.
+- FR-1.12.8: A song's text shall be inserted as free text directly beneath its header (the title line and, when 
+present, the melody and writer lines; FR-1.12.11–FR-1.12.13).
 - FR-1.12.9: SB shall not hard-code or assume a particular LaTeX engine in the generated source. Correct rendering of 
 Swedish characters (å, ä, ö) depends on the user compiling with a UTF-8-capable setup (e.g. XeLaTeX/LuaLaTeX, or 
 pdfLaTeX with `inputenc`/`fontenc`); this is a documented requirement on the user's toolchain, not something SB 
 detects or enforces.
 - FR-1.12.10: When a song's rendered content ends with more continuing on a later page, SB shall insert a 
-continuation marker (e.g. "(continued)") at the end of that fragment; when a song's rendered content resumes from 
-an earlier page, SB shall insert a corresponding marker (e.g. "(continued from previous page)") at its start 
+continuation marker (`(forts.)`) at the end of that fragment; when a song's rendered content resumes from 
+an earlier page, SB shall insert a corresponding marker (also `(forts.)`) at its start 
 (FR-1.3.16).
+- FR-1.12.11: A song's title shall be rendered on its own line, separate from the first line of the lyrics. Since 
+`\paragraph*` is a run-in heading, the emitted title shall be followed by an explicit line break 
+(`\paragraph*{{name}}\mbox{}\\`). (Bugfix A-1, see `addendums.md`.)
+- FR-1.12.12: When a song has a melody, it shall be rendered on its own line directly below the title, prefixed by 
+`Mel: `.
+- FR-1.12.13: When a song has a writer, it shall be rendered on its own line directly below the title (and below the 
+melody line, if any), prefixed by `Text: `. Songs without a melody and/or writer omit the corresponding line.
+- FR-1.12.14: The title, melody and writer lines, and each `(forts.)` notice line (FR-1.3.16, FR-1.12.10), shall count
+towards a song fragment's height (FR-1.3, §2.2 ordering) and the line budget when a song is split across
+columns/pages, so that the planned layout matches what is rendered. A continuation fragment re-renders no header
+lines; it has a leading notice line, and a trailing one if it breaks off again. (Addendum A-5.)
+- FR-1.12.15: The title line shall be prefixed with the song's number followed by a period and a space, e.g. `1. Title`. The number is the song's number in its document (§2.3). (Addendum A-4.)
 
 ## 2 Non-functional requirements (quality attributes)
 
