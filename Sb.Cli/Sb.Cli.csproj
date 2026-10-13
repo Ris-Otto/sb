@@ -6,7 +6,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <RootNamespace>Sb.Cli</RootNamespace>
-        <AssemblyName>sb</AssemblyName>
+        <AssemblyName>sb-cli</AssemblyName>
     </PropertyGroup>
 
     <ItemGroup>

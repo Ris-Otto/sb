@@ -23,7 +23,7 @@ public class Program
         // SB_DATA_DIR overrides where the database lives — lets a user keep more than one separate sb
         // database, and lets tests exercise the real CLI executable without touching the real one.
         string appDataFolder = Environment.GetEnvironmentVariable("SB_DATA_DIR") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "sb");
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "sb-cli");
         Directory.CreateDirectory(appDataFolder);
         string databasePath = Path.Combine(appDataFolder, "sb.db");
 
