@@ -8,9 +8,9 @@ public class FirstFitDecreasingTests
 {
     private const int ColumnWidth = 1000; // generous enough that no line ever wraps
 
-    // height = 1 (title) + textLines
+    // height = 2 (title + the space before it, A-12) + text lines
     private static Song Make(string title, int height) =>
-        Song.Create(title, Enumerable.Range(1, height - 1).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, height - 2).Select(i => $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void Fill_SongsSumToFullCapacity_MeetsTarget()

@@ -11,7 +11,7 @@ public class PaginatorTests
     private const int LinesPerColumn = 10;
 
     private static Song Make(string title, int textLines) =>
-        Song.Create(title, Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, textLines - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void PaginateAsListed_NonPositiveLinesPerColumn_ThrowsImmediately_NeverHangs()
@@ -19,7 +19,7 @@ public class PaginatorTests
         // Regression guard: must fail fast via ColumnFiller's own guard, not loop forever because
         // `remaining` never shrinks.
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => Paginator.PaginateAsListed([Make("A", 1)], linesPerColumn: 0, ColumnWidth));
+            () => Paginator.PaginateAsListed([Make("A", 2)], linesPerColumn: 0, ColumnWidth));
     }
 
     [Test]
@@ -35,6 +35,23 @@ public class PaginatorTests
         Assert.That(pages, Has.Count.EqualTo(1));
         Assert.That(pages[0].Column1.Select(f => f.Song), Is.EqualTo(new[] { a, b }));
         Assert.That(pages[0].Column2.Select(f => f.Song), Is.EqualTo(new[] { c, d }));
+    }
+
+    [Test]
+    public void PaginateAsListed_FirstPageIsShorter_WhenAFirstPageLineCountIsGiven()
+    {
+        // Four height-5 songs fill a 10-line column pair exactly. With a first page of only 5 lines per
+        // column (a chapter heading takes room), the first page holds two of them and the rest go on.
+        Song a = Make("A", 4), b = Make("B", 4), c = Make("C", 4), d = Make("D", 4);
+
+        var pages = Paginator.PaginateAsListed([a, b, c, d], LinesPerColumn, ColumnWidth, firstPageLinesPerColumn: 5);
+
+        Assert.That(pages, Has.Count.EqualTo(2));
+        Assert.That(pages[0].Column1.Select(f => f.Song), Is.EqualTo(new[] { a }));
+        Assert.That(pages[0].Column2.Select(f => f.Song), Is.EqualTo(new[] { b }));
+        Assert.That(pages[0].Column1Lines, Is.LessThanOrEqualTo(5));
+        Assert.That(pages[0].Column2Lines, Is.LessThanOrEqualTo(5));
+        Assert.That(pages[1].Column1.Select(f => f.Song), Is.EqualTo(new[] { c, d }), "later pages use the normal 10 lines");
     }
 
     [Test]
@@ -127,8 +144,8 @@ public class PaginatorTests
             Assert.That(fragmentsForSong.Count(f => f.IncludesTitle), Is.EqualTo(1), $"'{song.Title}' title must appear exactly once");
 
             // An empty line falling exactly on a break is dropped rather than shown as a gap (A-5).
-            var reassembledLines = fragmentsForSong.SelectMany(f => f.Lines).Where(l => l != "").ToArray();
-            Assert.That(reassembledLines, Is.EqualTo(song.Text.Where(l => l != "")), $"lines lost/duplicated for '{song.Title}'");
+            var reassembledLines = fragmentsForSong.SelectMany(f => f.Lines).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            Assert.That(reassembledLines, Is.EqualTo(song.Text.Where(l => !string.IsNullOrWhiteSpace(l))), $"lines lost/duplicated for '{song.Title}'");
         }
     }
 }

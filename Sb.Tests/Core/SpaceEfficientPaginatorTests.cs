@@ -11,13 +11,13 @@ public class SpaceEfficientPaginatorTests
 
     // Line 2 of every song is empty, ending its first paragraph after one line (A-2).
     private static Song Make(string title, int height) =>
-        Song.Create(title, Enumerable.Range(1, height - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, height - 2).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void Paginate_NonPositiveLinesPerColumn_ThrowsImmediately_NeverHangsOrGrowsUnbounded()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => SpaceEfficientPaginator.Paginate([Make("A", 2)], linesPerColumn: 0, ColumnWidth));
+            () => SpaceEfficientPaginator.Paginate([Make("A", 3)], linesPerColumn: 0, ColumnWidth));
     }
 
     [Test]
@@ -91,8 +91,8 @@ public class SpaceEfficientPaginatorTests
     {
         // Regression test: a single song far longer than one page must not silently vanish when
         // its carry-over fragment from a previous page still doesn't fit a fresh page.
-        Song big = Make("Big", height: 61); // 60 text lines, on a 5-line column (page capacity 10)
-        Song small = Make("Small", height: 2);
+        Song big = Make("Big", height: 62); // 60 text lines, on a 5-line column (page capacity 10)
+        Song small = Make("Small", height: 3);
 
         var pages = SpaceEfficientPaginator.Paginate([big, small], linesPerColumn: 5, ColumnWidth);
 
@@ -109,13 +109,26 @@ public class SpaceEfficientPaginatorTests
     }
 
     [Test]
+    public void Paginate_FirstPageIsShorter_WhenAFirstPageLineCountIsGiven()
+    {
+        Song a = Make("A", 6), b = Make("B", 6), c = Make("C", 6), d = Make("D", 6);
+
+        var pages = SpaceEfficientPaginator.Paginate([a, b, c, d], linesPerColumn: 10, ColumnWidth, firstPageLinesPerColumn: 6);
+
+        Assert.That(pages[0].Column1Lines, Is.LessThanOrEqualTo(6));
+        Assert.That(pages[0].Column2Lines, Is.LessThanOrEqualTo(6));
+        Assert.That(pages.Skip(1).Max(p => Math.Max(p.Column1Lines, p.Column2Lines)), Is.LessThanOrEqualTo(10));
+        Assert.That(pages.SelectMany(p => p.Column1.Concat(p.Column2)).Select(f => f.Song).Distinct().Count(), Is.EqualTo(4));
+    }
+
+    [Test]
     public void Paginate_ChoosesSetThatReallyPlaces_NotJustOneWhoseHeightsAddUp()
     {
         // Single-paragraph songs (no empty line) can't be split (A-2). With A (8) leading, column 1 has
         // 2 lines left that nothing can use, so C+D (6+6 = 12, a perfect height fit) would leave D
         // unplaceable in column 2 (10 lines); C+E (6+4 = 10) is what actually fills the page.
         static Song Single(string title, int height) =>
-            Song.Create(title, Enumerable.Range(1, height - 1).Select(i => $"line {i}").ToArray(), 1).Value;
+            Song.Create(title, Enumerable.Range(1, height - 2).Select(i => $"line {i}").ToArray(), 1).Value;
         Song a = Single("A", 8), b = Single("B", 7), c = Single("C", 6), d = Single("D", 6), e = Single("E", 4);
 
         var pages = SpaceEfficientPaginator.Paginate([a, b, c, d, e], linesPerColumn: 10, ColumnWidth);
@@ -146,7 +159,10 @@ public class SpaceEfficientPaginatorTests
             var fragments = pages.SelectMany(p => p.Column1.Concat(p.Column2)).Where(f => f.Song == song).ToList();
             Assert.That(fragments, Is.Not.Empty, $"no fragments found for '{song.Title}'");
             Assert.That(fragments.Count(f => f.IncludesTitle), Is.EqualTo(1), $"'{song.Title}' title must appear exactly once");
-            Assert.That(fragments.SelectMany(f => f.Lines).ToArray(), Is.EqualTo(song.Text), $"lines lost/duplicated for '{song.Title}'");
+            // A blank line falling exactly on a break is dropped rather than shown as a gap (A-5).
+            Assert.That(
+                fragments.SelectMany(f => f.Lines).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray(),
+                Is.EqualTo(song.Text.Where(l => !string.IsNullOrWhiteSpace(l))), $"lines lost/duplicated for '{song.Title}'");
         }
     }
 

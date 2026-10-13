@@ -5,7 +5,15 @@
 \usepackage{etoolbox}
 \usepackage{titlesec}
 \usepackage[a4paper, margin=0.4in, bmargin=0.65in, tmargin=0.3in]{geometry}
-\fontsize{12pt}{14.4pt}
+% The body font is 12pt on 14.4pt leading. A \fontsize in the preamble is undone at \begin{document}
+% (LaTeX selects \normalsize then, which is 10pt in the book class), so \normalsize itself is
+% redefined; headings, which use \normalsize, then match the text.
+\makeatletter
+\renewcommand\normalsize{\@setfontsize\normalsize{12pt}{14.4pt}}
+\makeatother
+% A song's \paragraph* title is preceded by exactly one line of space, so that a song's height is a
+% whole number of lines (SB plans the page layout in lines: see LayoutDefaults in Sb.Core).
+\titlespacing*{\paragraph}{0pt}{\baselineskip}{0pt}
 \setlength{\parindent}{0pt}
 
 \begin{document}

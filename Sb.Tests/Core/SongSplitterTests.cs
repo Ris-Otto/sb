@@ -10,7 +10,7 @@ public class SongSplitterTests
     // Line 2 of every song is empty, ending the first paragraph after one line (A-2).
 
     private static Song MakeSong(int textLines) =>
-        Song.Create("Title", Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
+        Song.Create("Title", Enumerable.Range(1, textLines - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void Split_FitsEntirely_ReturnsWholeFragmentNoRest()
@@ -39,15 +39,15 @@ public class SongSplitterTests
     [Test]
     public void Split_PartialFit_FirstFragmentIncludesTitleAndFittingLines()
     {
-        Song song = MakeSong(textLines: 6); // height 7: title + 6 lines
+        Song song = MakeSong(textLines: 6); // height 7: 2 header lines (title + spacing) + 5 text lines
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
 
         Assert.That(first, Is.Not.Null);
         Assert.That(first!.IncludesTitle, Is.True);
         Assert.That(first.Lines, Is.EqualTo(new[] { "line 1", "" }));
-        Assert.That(first.Height, Is.EqualTo(3));
+        Assert.That(first.Height, Is.EqualTo(4));
     }
 
     [Test]
@@ -56,12 +56,12 @@ public class SongSplitterTests
         Song song = MakeSong(textLines: 6);
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (_, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+        var (_, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
 
         Assert.That(remainder, Is.Not.Null);
         Assert.That(remainder!.IncludesTitle, Is.False);
-        Assert.That(remainder.Lines, Is.EqualTo(new[] { "line 3", "line 4", "line 5", "line 6" }));
-        Assert.That(remainder.Height, Is.EqualTo(4));
+        Assert.That(remainder.Lines, Is.EqualTo(new[] { "line 3", "line 4", "line 5" }));
+        Assert.That(remainder.Height, Is.EqualTo(3));
     }
 
     [Test]
@@ -70,7 +70,7 @@ public class SongSplitterTests
         Song song = MakeSong(textLines: 6);
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
 
         var reassembled = first!.Lines.Concat(remainder!.Lines).ToArray();
         Assert.That(reassembled, Is.EqualTo(song.Text));
@@ -82,7 +82,7 @@ public class SongSplitterTests
         Song song = MakeSong(textLines: 6);
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
 
         Assert.That(first!.Song, Is.SameAs(song));
         Assert.That(remainder!.Song, Is.SameAs(song));
@@ -107,7 +107,7 @@ public class SongSplitterTests
         Song song = Song.Create("Title", ["a", "b", "c", "", "d", "e"], 1).Value;
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
 
         Assert.That(first, Is.Null);
         Assert.That(remainder, Is.Null);
@@ -119,7 +119,7 @@ public class SongSplitterTests
         Song song = Song.Create("Title", ["a", "b", "c", "", "d", "e"], 1).Value;
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 6, ColumnWidth);
 
         Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "c", "" }));
         Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d", "e" }));
@@ -132,7 +132,7 @@ public class SongSplitterTests
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
         var (first, remainder) = SongSplitter.Split(
-            fragment, availableLines: 3, ColumnWidth, allowPartialFirstParagraph: true);
+            fragment, availableLines: 4, ColumnWidth, allowPartialFirstParagraph: true);
 
         Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b" }));
         Assert.That(remainder, Is.Not.Null);
@@ -146,10 +146,10 @@ public class SongSplitterTests
         Song song = Song.Create("Title", ["a", "b", "", "c", "d", "e"], 1).Value;
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 6, ColumnWidth, isPageBoundary: true);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 7, ColumnWidth, isPageBoundary: true);
 
         Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "", "c" }));
-        Assert.That(first.Height, Is.EqualTo(1 + 4 + 1), "title + 4 lines + trailing notice");
+        Assert.That(first.Height, Is.EqualTo(2 + 4 + 1), "title + its spacing + 4 lines + trailing notice");
         Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d", "e" }));
         Assert.That(remainder.Height, Is.EqualTo(1 + 2), "leading notice + 2 lines");
     }
@@ -162,8 +162,8 @@ public class SongSplitterTests
 
         var (first, remainder) = SongSplitter.Split(fragment, availableLines: 6, ColumnWidth);
 
-        Assert.That(first!.Height, Is.EqualTo(1 + 5));
-        Assert.That(remainder!.Height, Is.EqualTo(1));
+        Assert.That(first!.Height, Is.EqualTo(2 + 4));
+        Assert.That(remainder!.Height, Is.EqualTo(2));
     }
 
     [Test]
@@ -174,7 +174,7 @@ public class SongSplitterTests
         Song song = Song.Create("Title", ["a", "b", "c", "", "d"], 1).Value;
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 4, ColumnWidth);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth);
 
         Assert.That(first!.Lines, Is.EqualTo(new[] { "a", "b", "c" }));
         Assert.That(remainder!.Lines, Is.EqualTo(new[] { "d" }));
@@ -213,7 +213,7 @@ public class SongSplitterTests
         Song song = MakeSong(textLines: 6);
         var fragment = SongFragment.Whole(song, ColumnWidth);
 
-        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 3, ColumnWidth, isPageBoundary: true);
+        var (first, remainder) = SongSplitter.Split(fragment, availableLines: 5, ColumnWidth, isPageBoundary: true);
 
         Assert.That(first!.ContinuesOnNextPage, Is.True);
         Assert.That(remainder!.ContinuesFromPreviousPage, Is.True);

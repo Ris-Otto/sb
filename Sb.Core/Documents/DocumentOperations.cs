@@ -252,6 +252,8 @@ public sealed class DocumentOperations(Database database)
 
     private static IReadOnlyList<Page> ComputePages(IReadOnlyList<Song> songs, SongOrdering ordering) =>
         ordering == SongOrdering.SpaceEfficient
-            ? SpaceEfficientPaginator.Paginate(songs, LayoutDefaults.LinesPerColumn, LayoutDefaults.ColumnWidth)
-            : Paginator.PaginateAsListed(OrderAsListed(songs), LayoutDefaults.LinesPerColumn, LayoutDefaults.ColumnWidth);
+            ? SpaceEfficientPaginator.Paginate(
+                songs, LayoutDefaults.LinesPerColumn, LayoutDefaults.ColumnWidth, LayoutDefaults.FirstPageLinesPerColumn)
+            : Paginator.PaginateAsListed(
+                OrderAsListed(songs), LayoutDefaults.LinesPerColumn, LayoutDefaults.ColumnWidth, LayoutDefaults.FirstPageLinesPerColumn);
 }

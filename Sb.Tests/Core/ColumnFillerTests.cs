@@ -6,13 +6,13 @@ namespace Sb.Tests.Core;
 [TestFixture]
 public class ColumnFillerTests
 {
-    // (Line 2 of every song is blank, so a paragraph ends there: see A-2.) One title line + N text lines, with columnWidth generous enough that no wrapping occurs,
+    // (Line 2 of every song is blank, so a paragraph ends there: see A-2.) Two header lines (the title and the space before it, A-12) + N-1 text lines, with columnWidth generous enough that no wrapping occurs,
     // so each song's height is exactly (1 + N) and tests can reason about exact line counts.
     private const int ColumnWidth = 1000;
 
     private static SongFragment Make(string title, int textLines, int number = 1)
     {
-        Song song = Song.Create(title, Enumerable.Range(1, textLines).Select(i => i == 2 ? "" : $"line {i}").ToArray(), number).Value;
+        Song song = Song.Create(title, Enumerable.Range(1, textLines - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), number).Value;
         return SongFragment.Whole(song, ColumnWidth);
     }
 
@@ -201,6 +201,6 @@ public class ColumnFillerTests
     public void Fill_NonPositiveLinesPerColumn_ThrowsImmediately(int linesPerColumn)
     {
         // Regression guard: must fail fast and loud, not silently hang a caller's pagination loop.
-        Assert.Throws<ArgumentOutOfRangeException>(() => ColumnFiller.Fill([Make("A", 1)], linesPerColumn, ColumnWidth));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColumnFiller.Fill([Make("A", 2)], linesPerColumn, ColumnWidth));
     }
 }

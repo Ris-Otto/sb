@@ -10,16 +10,16 @@ public class SubsetSumSearchTests
 {
     private const int ColumnWidth = 1000; // generous enough that no line ever wraps
 
-    // height = 1 (title) + textLines
+    // height = 2 (title + the space before it, A-12) + text lines
     private static Song Make(string title, int height) =>
-        Song.Create(title, Enumerable.Range(1, height - 1).Select(i => $"line {i}").ToArray(), 1).Value;
+        Song.Create(title, Enumerable.Range(1, height - 2).Select(i => $"line {i}").ToArray(), 1).Value;
 
     [Test]
     public void FindBestFit_MatchesBruteForceOptimum_OnSmallHandCraftedSet()
     {
         Song[] candidates =
         [
-            Make("A", 6), Make("B", 5), Make("C", 5), Make("D", 3), Make("E", 7), Make("F", 2)
+            Make("A", 6), Make("B", 5), Make("C", 5), Make("D", 3), Make("E", 7), Make("F", 3)
         ];
         const int capacity = 14;
 
@@ -84,7 +84,7 @@ public class SubsetSumSearchTests
     {
         // Regression guard for NFR-2.6.1: this must stay pseudo-polynomial (DP), never factorial/
         // exponential permutation enumeration.
-        var candidates = Enumerable.Range(0, 45).Select(i => Make($"Song {i}", height: (i % 12) + 2)).ToArray();
+        var candidates = Enumerable.Range(0, 45).Select(i => Make($"Song {i}", height: (i % 12) + 3)).ToArray();
         const int capacity = 200;
 
         var stopwatch = Stopwatch.StartNew();

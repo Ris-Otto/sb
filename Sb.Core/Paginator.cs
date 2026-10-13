@@ -9,13 +9,16 @@ namespace Sb.Core;
 /// </summary>
 public static class Paginator
 {
-    public static IReadOnlyList<Page> PaginateAsListed(IReadOnlyList<Song> songs, int linesPerColumn, int columnWidth)
+    public static IReadOnlyList<Page> PaginateAsListed(
+        IReadOnlyList<Song> songs, int linesPerColumn, int columnWidth, int? firstPageLinesPerColumn = null)
     {
         var candidates = songs.Select(song => SongFragment.Whole(song, columnWidth)).ToList();
-        return Paginate(candidates, linesPerColumn, columnWidth);
+        return Paginate(candidates, linesPerColumn, columnWidth, firstPageLinesPerColumn);
     }
 
-    public static IReadOnlyList<Page> Paginate(IReadOnlyList<SongFragment> initialCandidates, int linesPerColumn, int columnWidth)
+    public static IReadOnlyList<Page> Paginate(
+        IReadOnlyList<SongFragment> initialCandidates, int linesPerColumn, int columnWidth,
+        int? firstPageLinesPerColumn = null)
     {
         var pages = new List<Page>();
         IReadOnlyList<SongFragment> remaining = initialCandidates;
@@ -24,14 +27,16 @@ public static class Paginator
         while (remaining.Count > 0)
         {
             bool isOddPage = pageNumber % 2 == 1;
-            PageLayout layout = ColumnFiller.Fill(remaining, linesPerColumn, columnWidth, allowPageOverflow: isOddPage);
+            // A chapter's first page is shorter: its heading takes room the other pages have (A-12).
+            int pageLines = pageNumber == 1 ? firstPageLinesPerColumn ?? linesPerColumn : linesPerColumn;
+            PageLayout layout = ColumnFiller.Fill(remaining, pageLines, columnWidth, allowPageOverflow: isOddPage);
             var column2 = layout.Column2.ToList();
             int column2Lines = layout.Column2Lines;
             IReadOnlyList<SongFragment> nextRemaining = layout.RemainingFragments;
 
             if (isOddPage && layout.RemainingFragments.Count > 0)
             {
-                int leftover = linesPerColumn - column2Lines;
+                int leftover = pageLines - column2Lines;
                 if (leftover > 0)
                 {
                     var (first, remainder) = SongSplitter.Split(

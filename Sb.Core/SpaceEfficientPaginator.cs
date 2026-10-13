@@ -13,7 +13,8 @@ namespace Sb.Core;
 /// </summary>
 public static class SpaceEfficientPaginator
 {
-    public static IReadOnlyList<Page> Paginate(IReadOnlyList<Song> songs, int linesPerColumn, int columnWidth)
+    public static IReadOnlyList<Page> Paginate(
+        IReadOnlyList<Song> songs, int linesPerColumn, int columnWidth, int? firstPageLinesPerColumn = null)
     {
         var pages = new List<Page>();
         var pool = songs.ToList();
@@ -24,7 +25,9 @@ public static class SpaceEfficientPaginator
         {
             bool isOddPage = pageNumber % 2 == 1;
             var pageCandidates = new List<SongFragment>();
-            int capacity = 2 * linesPerColumn;
+            // A chapter's first page is shorter: its heading takes room the other pages have (A-12).
+            int pageLines = pageNumber == 1 ? firstPageLinesPerColumn ?? linesPerColumn : linesPerColumn;
+            int capacity = 2 * pageLines;
 
             if (carryOver is not null)
             {
@@ -43,7 +46,7 @@ public static class SpaceEfficientPaginator
                 if (capacityForOthers > 0 && pool.Count > 0)
                 {
                     foreach (Song song in ChooseCompanions(
-                        pageCandidates, pool, capacityForOthers, linesPerColumn, columnWidth, isOddPage))
+                        pageCandidates, pool, capacityForOthers, pageLines, columnWidth, isOddPage))
                     {
                         pageCandidates.Add(SongFragment.Whole(song, columnWidth));
                         pool.Remove(song);
@@ -55,7 +58,7 @@ public static class SpaceEfficientPaginator
             // fragments over: an oversized carry-over, a song that can't start where only a stub would
             // fit (FR-1.3.17), or a song that may not spill out of an even page (FR-1.3.6). All of
             // these are handled below rather than assumed away.
-            PageLayout layout = ColumnFiller.Fill(pageCandidates, linesPerColumn, columnWidth, allowPageOverflow: isOddPage);
+            PageLayout layout = ColumnFiller.Fill(pageCandidates, pageLines, columnWidth, allowPageOverflow: isOddPage);
             var column2 = layout.Column2.ToList();
             int column2Lines = layout.Column2Lines;
 
@@ -70,7 +73,7 @@ public static class SpaceEfficientPaginator
             }
             else if (isOddPage && pool.Count > 0)
             {
-                int leftover = linesPerColumn - column2Lines;
+                int leftover = pageLines - column2Lines;
                 if (leftover > 0)
                 {
                     Song candidate = pool[0];

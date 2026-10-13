@@ -3,7 +3,7 @@ using System.Text;
 namespace Sb.Core.LaTeX;
 
 /// <summary>
-/// Renders a chapter's songs to LaTeX (FR-1.12.5–FR-1.12.15): each song as a header (the
+/// Renders a chapter's songs to LaTeX (FR-1.12.5–FR-1.12.16): each song as a header (the
 /// <c>N. Title</c> line, then <c>Mel:</c>/<c>Text:</c> lines when present) followed by its lyrics.
 /// Two independent rendering paths mirror the two layout modes:
 ///
@@ -20,6 +20,10 @@ namespace Sb.Core.LaTeX;
 /// flow (§2.1), so there's no column budget to plan against and no page boundary SB itself knows
 /// about — LaTeX decides where pages break, invisibly to us, so no continuation notice can be
 /// placed correctly in this mode.
+///
+/// Every line but the last of a fragment (or single-column song) ends in <c>\\</c>. The last one must
+/// not: a <c>\\</c> at the end of a paragraph makes LaTeX add an empty line after it, which the
+/// planned line counts do not include (A-12).
 /// </summary>
 public static class ChapterEmitter
 {
@@ -78,23 +82,16 @@ public static class ChapterEmitter
             lines.AddRange(song.Text.Select(LaTeXText.Escape));
             int keptTogether = lines.Count - song.Text.Count + Math.Min(lyricLinesKept, song.Text.Count);
 
-            for (int i = 0; i < lines.Count; i++)
-                sb.AppendLine(lines[i] + (i < keptTogether - 1 ? "\\\\*" : "\\\\"));
+            AppendLines(sb, lines, keptTogether);
         }
 
         return sb.ToString();
     }
 
-    // \paragraph* is a run-in heading, so \mbox{}\\ is needed to end its line; otherwise the first
-    // lyric line would follow the title on the same line. Melody and writer get their own lines.
-    private static void AppendHeader(StringBuilder sb, Song song)
-    {
-        foreach (string line in HeaderLatex(song))
-            sb.AppendLine(line + "\\\\");
-    }
-
     /// <summary>The header's lines, without their line-break terminators: <c>N. Title</c>, then the
-    /// <c>Mel:</c>/<c>Text:</c> lines when present (FR-1.12.7, FR-1.12.11–15).</summary>
+    /// <c>Mel:</c>/<c>Text:</c> lines when present (FR-1.12.7, FR-1.12.11–15). <c>\paragraph*</c> is a
+    /// run-in heading, so the <c>\mbox{}</c> and the line break after it are what put the title on a line
+    /// of its own instead of in front of the first lyric line.</summary>
     private static IEnumerable<string> HeaderLatex(Song song)
     {
         yield return $"\\paragraph*{{{song.Number}. {LaTeXText.Escape(song.Title)}}}\\mbox{{}}";
@@ -104,21 +101,41 @@ public static class ChapterEmitter
             yield return $"Text: {LaTeXText.Escape(song.Writer)}";
     }
 
+    /// <summary>Writes the lines separated by line breaks. The first <paramref name="nonBreaking"/> lines
+    /// are joined with <c>\\*</c> (no page break allowed after the line break); the last line gets no
+    /// terminator at all.</summary>
+    private static void AppendLines(StringBuilder sb, IReadOnlyList<string> lines, int nonBreaking)
+    {
+        for (int i = 0; i < lines.Count; i++)
+        {
+            string terminator = i == lines.Count - 1 ? "" : i < nonBreaking - 1 ? "\\\\*" : "\\\\";
+            sb.AppendLine(lines[i] + terminator);
+        }
+    }
+
     private static void AppendFragment(StringBuilder sb, SongFragment fragment, int columnWidth)
     {
+        var lines = new List<string>();
+
         if (fragment.ContinuesFromPreviousPage)
-            sb.AppendLine("\\textit{(forts.)}\\\\");
+            lines.Add("\\textit{(forts.)}");
 
         if (fragment.IncludesTitle)
-            AppendHeader(sb, fragment.Song);
+            lines.AddRange(HeaderLatex(fragment.Song));
 
         foreach (string line in fragment.Lines)
         {
             foreach (string wrapped in LineWrapper.Wrap(line, columnWidth))
-                sb.AppendLine($"{LaTeXText.Escape(wrapped)}\\\\");
+                lines.Add(LaTeXText.Escape(wrapped));
         }
 
         if (fragment.ContinuesOnNextPage)
-            sb.AppendLine("\\textit{(forts.)}\\\\");
+            lines.Add("\\textit{(forts.)}");
+
+        AppendLines(sb, lines, nonBreaking: 0);
+
+        // Ends the paragraph, so the next fragment (or a \vspace) starts in vertical mode.
+        if (lines.Count > 0)
+            sb.AppendLine("\\par");
     }
 }

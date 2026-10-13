@@ -325,3 +325,48 @@ heavy for the mode that is meant to be plain LaTeX flow.
 **Tests.** `ChapterEmitterTests`: header and first paragraph joined with `\\*` and the rest plain; a first paragraph
 longer than the cap is only kept together up to the cap; a song starting with an empty line still keeps its title with
 the next line; multi-column output contains no `\\*`.
+
+## A-12: Page geometry computed from the template; the body font really is 12pt (2026-10-13)
+
+**Problem.** SB planned every page against two guessed numbers (50 lines per column, 40 characters per line).
+Measuring the real template with LuaLaTeX (the engine used for `vibe-test`) showed that they did not match it, and
+turned up three more things the plan did not know about:
+1. **The body was not 12pt.** `\fontsize{12pt}{14.4pt}\selectfont` in the preamble is undone at
+   `\begin{document}`, where LaTeX selects `\normalsize`, which is 10pt on 12pt leading in the `book` class. The
+   template's intended 12pt/14.4pt only applies to the preamble. (Adding `\selectfont` alone did not change the body.)
+2. **Every song cost about two lines more than planned.** The default `\paragraph*` spacing put about 15.5pt in front
+   of each title, and a `\\` at the end of a fragment's last line makes LaTeX add an empty line before the next
+   song. Together about 2.1 lines per song, against the one line (the title) the plan counted. With the font fixed,
+   a column of songs would have overflowed and been pushed onto extra pages.
+3. **A chapter's first page is shorter.** The `\chapter*` heading takes 135.7pt (about 9.4 lines) there, which the
+   plan, using one line count for all pages, ignored.
+
+**Fix.**
+- `template-main.tex`: `\normalsize` is redefined to 12pt on 14.4pt (so titles match the text as well), and
+  `\titlespacing*{\paragraph}{0pt}{\baselineskip}{0pt}` makes the space before a title exactly one line.
+- `ChapterEmitter` puts `\\` between the lines of a fragment but not after the last one, and ends the fragment
+  with `\par` (single-column songs likewise). The `\\*` keep-together of A-11 is unchanged.
+- `SongLayout.HeaderLines` now counts the space before the title: a header is 2 lines plus melody/writer. The
+  tests' helpers and numbers were adjusted for it.
+- `LayoutDefaults` derives its numbers from the measured geometry instead of stating them: 53 lines per column
+  (54 fit, minus one line of safety), 43 on a chapter's first page (44 fit), 43 characters per line (lyric lines of
+  up to 44 characters fit the 259.05pt column, the first that overflowed had 45; 43 is the widest per-character
+  width measured among the lines of 40-45 characters).
+- `Paginator` and `SpaceEfficientPaginator` take an optional `firstPageLinesPerColumn` and plan a chapter's first page
+  with it (also its odd-page top-up and the page simulation of A-3).
+
+**Checked end to end.** The `vibe-test` songs (tripled, plus a second chapter with melody and writer) were built through
+the CLI in a scratch folder in both ordering modes and compiled with LuaLaTeX: SB's planned page count matched the
+PDF's exactly (20 and 19 pages), with no overfull boxes, and the titles are the same size as the lyrics.
+
+**Known limits.** A chapter title longer than one line takes more room on the first page than planned. The numbers are
+measurements of this template and have to be redone if its geometry, font or spacing changes (the tests only check
+that the template still has the geometry they were measured from). A line of lyrics with unusually wide letters can
+still be wrapped by LaTeX where SB did not expect it; the line of safety absorbs that for a line or two per column.
+
+**Documentation updated.** `requirements.md`: FR-1.12.4 (font), FR-1.12.14 (header includes the spacing line),
+new FR-1.12.17 and FR-1.12.18. `specification.md`: §4.1 (planning numbers), §4.3 (header, line breaks).
+
+**Tests.** New `LayoutDefaultsTests` (the derived numbers, and that the template still has the geometry), a first-page
+test for each paginator, emitter tests for "no line break after the last line"; the existing layout tests were
+adjusted for the 2-line header.

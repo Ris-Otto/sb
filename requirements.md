@@ -218,7 +218,8 @@ longer shown and is left out of the `.yml`); an empty value for `songs add` is t
 - FR-1.12.2: Adding a chapter to a document shall insert that chapter into the generated main document.
 - FR-1.12.3: Creating a document shall insert its metadata (title, subtitle) into the generated main document.
 - FR-1.12.4: The generated document's page size shall be A4, with margins and other page metrics as defined in 
-`PageMetrics.png`.
+`PageMetrics.png`. The body text shall be 12pt on 14.4pt leading, selected by redefining `\normalsize` (a font size 
+chosen in the preamble is silently undone at `\begin{document}`), so that headings match the text.
 - FR-1.12.5: Chapters shall be emitted as unnumbered LaTeX chapters, using `\chapter*{{name}}` rather than `\chapter{{name}}` — the outer braces are LaTeX's own command-argument delimiters, and the inner `{name}` is the substitution placeholder for the chapter's display title.
 - FR-1.12.6: Each page's two columns shall each be a minipage; the songs (or song fragments) placed in a column are 
 rendered inside its minipage.
@@ -240,10 +241,20 @@ an earlier page, SB shall insert a corresponding marker (also `(forts.)`) at its
 `Mel: `.
 - FR-1.12.13: When a song has a writer, it shall be rendered on its own line directly below the title (and below the 
 melody line, if any), prefixed by `Text: `. Songs without a melody and/or writer omit the corresponding line.
-- FR-1.12.14: The title, melody and writer lines, and each `(forts.)` notice line (FR-1.3.16, FR-1.12.10), shall count
-towards a song fragment's height (FR-1.3, §2.2 ordering) and the line budget when a song is split across
-columns/pages, so that the planned layout matches what is rendered. A continuation fragment re-renders no header
-lines; it has a leading notice line, and a trailing one if it breaks off again. (Addendum A-5.)
+- FR-1.12.14: The title, melody and writer lines, the line of space before every title (FR-1.12.17), and each 
+`(forts.)` notice line (FR-1.3.16, FR-1.12.10), shall count towards a song fragment's height (FR-1.3, §2.2 ordering) 
+and the line budget when a song is split across columns/pages, so that the planned layout matches what is rendered. 
+A continuation fragment re-renders no header lines; it has a leading notice line, and a trailing one if it breaks 
+off again. (Addenda A-5, A-12.)
+- FR-1.12.17: A song's height shall be a whole number of lines, so that the line-based planning (FR-1.2.8, FR-1.3) is 
+exact: the template shall put exactly one line of space before each song's `\paragraph*` title (`\titlespacing`), and 
+the emitted text shall have a line break between lines but none after the last line of a fragment, since a break at 
+the end of a paragraph makes LaTeX add an empty line that the plan does not include. (Addendum A-12.)
+- FR-1.12.18: The number of characters and of lines that fit a column shall be derived from the template's page 
+geometry (FR-1.12.4), not guessed: a column's width in characters is what the widest lines of real lyrics fit, and its 
+height in lines is taken from the text height and the leading, with one line of safety for text that wraps 
+unexpectedly. The first page of a chapter has fewer lines than the others because the `\chapter*` heading takes room, 
+and the paginators shall plan it with its own, smaller line count. (Addendum A-12.)
 - FR-1.12.16: In single-column mode, where LaTeX decides the page breaks, SB shall not allow a page break between a 
 song's header and the start of its lyrics: the header lines and the song's first paragraph (FR-1.3.17), up to 10 lyric 
 lines, are joined with non-breaking line ends (`\\*`), so a title is never left alone at the bottom of a page. The 

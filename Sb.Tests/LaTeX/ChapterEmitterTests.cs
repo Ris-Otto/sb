@@ -62,7 +62,9 @@ public class ChapterEmitterTests
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
 
         Assert.That(rendered, Does.Contain("Första raden\\\\"));
-        Assert.That(rendered, Does.Contain("Tredje raden\\\\"));
+        // The last line has no line break after it (it would add an empty line, A-12); the paragraph just ends.
+        Assert.That(rendered, Does.Contain("Tredje raden" + Environment.NewLine + "\\par"));
+        Assert.That(rendered, Does.Not.Contain("Tredje raden\\\\"));
         int firstIndex = rendered.IndexOf("Första raden", StringComparison.Ordinal);
         int thirdIndex = rendered.IndexOf("Tredje raden", StringComparison.Ordinal);
         Assert.That(firstIndex, Is.LessThan(thirdIndex));
@@ -78,8 +80,8 @@ public class ChapterEmitterTests
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], columnWidth: 10);
 
         // LineWrapper would wrap this into 4 sub-lines at columnWidth 10 (verified in LineWrapperTests).
-        // plus one line break ending the title's line.
-        Assert.That(CountOccurrences(rendered, "\\\\"), Is.EqualTo(5));
+        // plus the title line, which makes 5 lines; a line break goes between lines, none after the last.
+        Assert.That(CountOccurrences(rendered, "\\\\"), Is.EqualTo(4));
     }
 
     [Test]
@@ -103,8 +105,11 @@ public class ChapterEmitterTests
 
         string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
 
-        Assert.That(rendered, Does.Contain("\\paragraph*{1. Titel}\\mbox{}\\\\\nMel: Tonsättare\\\\\nText: Skribent\\\\\nFörsta raden\\\\".Replace("\n", Environment.NewLine)));
-        Assert.That(fragment.Height, Is.EqualTo(4));
+        string expected = string.Join(
+            Environment.NewLine,
+            "\\paragraph*{1. Titel}\\mbox{}\\\\", "Mel: Tonsättare\\\\", "Text: Skribent\\\\", "Första raden", "\\par");
+        Assert.That(rendered, Does.Contain(expected));
+        Assert.That(fragment.Height, Is.EqualTo(SongLayout.HeaderLines(song) + 1));
     }
 
     [Test]
@@ -194,7 +199,8 @@ public class ChapterEmitterTests
         string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
 
         Assert.That(rendered, Does.Contain("Första raden\\\\"));
-        Assert.That(rendered, Does.Contain("Andra raden\\\\"));
+        Assert.That(rendered, Does.Contain("Andra raden" + Environment.NewLine));
+        Assert.That(rendered, Does.Not.Contain("Andra raden\\\\"), "no line break after the last line (A-12)");
     }
 
     private static int CountOccurrences(string text, string substring)
@@ -219,7 +225,7 @@ public class ChapterEmitterTests
         // `\\*` forbids a page break after the line; the last kept line and everything after allow one.
         string expected = string.Join(
             Environment.NewLine,
-            "\\paragraph*{1. T}\\mbox{}\\\\*", "Text: W\\\\*", "a\\\\*", "b\\\\", "\\\\", "c\\\\");
+            "\\paragraph*{1. T}\\mbox{}\\\\*", "Text: W\\\\*", "a\\\\*", "b\\\\", "\\\\", "c");
         Assert.That(rendered, Does.Contain(expected));
     }
 
