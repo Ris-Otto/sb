@@ -229,4 +229,97 @@ public class SongsCommandsTests
 
         Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.NotFound)));
     }
+
+    // --- working-directory inference for the multi-positional commands (FR-1.8.4) ---
+
+    private int RunIn(string directory, params string[] args)
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(directory);
+        try
+        {
+            return Run(args);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Add_FromInsideChapterFolder_InfersDocumentAndChapter()
+    {
+        int exitCode = RunIn(ChapterFolder, "songs", "add", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Lille Albin.yml")), Is.True);
+    }
+
+    [Test]
+    public void Add_FromInsideDocumentFolder_ChapterGiven_InfersDocument()
+    {
+        int exitCode = RunIn(Path.Combine(_outputFolder, "my-doc"), "songs", "add", "chapter-1", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Lille Albin.yml")), Is.True);
+    }
+
+    [Test]
+    public void Add_OutsideAnyDocument_WithoutDocumentName_FailsWithValidationError()
+    {
+        int exitCode = RunIn(_outputFolder, "songs", "add", "chapter-1", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        Assert.That(_error.ToString(), Does.Contain("document"));
+    }
+
+    [Test]
+    public void Add_FromDocumentFolder_WithoutChapter_FailsWithValidationError()
+    {
+        int exitCode = RunIn(Path.Combine(_outputFolder, "my-doc"), "songs", "add", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        Assert.That(_error.ToString(), Does.Contain("chapter"));
+    }
+
+    [Test]
+    public void Add_ExplicitDocumentAndChapter_OverrideInference()
+    {
+        new ChapterOperations(_db).Add("my-doc", "chapter-2", null);
+
+        int exitCode = RunIn(ChapterFolder, "songs", "add", "my-doc", "chapter-2", "Lille Albin", "rad 1");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(_outputFolder, "my-doc", "Chapters", "chapter-2", "Lille Albin.yml")), Is.True);
+    }
+
+    [Test]
+    public void Delete_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = RunIn(Path.Combine(_outputFolder, "my-doc"), "songs", "delete", "Lille Albin");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Lille Albin.yml")), Is.False);
+    }
+
+    [Test]
+    public void Modify_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("songs", "add", "my-doc", "chapter-1", "Lille Albin", "rad 1");
+
+        int exitCode = RunIn(Path.Combine(_outputFolder, "my-doc"), "songs", "modify", "Lille Albin", "-w", "Nobody");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        Assert.That(File.ReadAllText(Path.Combine(ChapterFolder, "Lille Albin.yml")), Does.Contain("Nobody"));
+    }
+
+    [Test]
+    public void Modify_OutsideAnyDocument_WithoutDocumentName_FailsWithValidationError()
+    {
+        int exitCode = RunIn(_outputFolder, "songs", "modify", "Lille Albin", "-w", "Nobody");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+    }
 }

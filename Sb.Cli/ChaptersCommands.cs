@@ -14,7 +14,7 @@ public static class ChaptersCommands
     {
         var chapters = new Command("chapters", "Manage chapters within a document");
         chapters.Subcommands.Add(BuildAdd(operations, database));
-        chapters.Subcommands.Add(BuildDelete(operations, confirm));
+        chapters.Subcommands.Add(BuildDelete(operations, database, confirm));
         chapters.Subcommands.Add(BuildList(operations, database));
         return chapters;
     }
@@ -57,21 +57,25 @@ public static class ChaptersCommands
         return command;
     }
 
-    private static Command BuildDelete(ChapterOperations operations, Func<string, bool> confirm)
+    private static Command BuildDelete(ChapterOperations operations, Database database, Func<string, bool> confirm)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document the chapters belong to." };
-        var chapterNames = new Argument<string>("chapters") { Description = "Comma-separated chapter names to delete." };
+        var positionals = InferredPositionals.Declare(
+            "[document-name] chapters — a comma-separated list of the chapter names to delete",
+            required: 1, inferableLeading: 1);
         var force = new Option<bool>("--force", "-f") { Description = "Skip the confirmation prompt." };
 
         var command = new Command("delete", "Delete one or more chapters from a document.");
-        command.Arguments.Add(documentName);
-        command.Arguments.Add(chapterNames);
+        command.Arguments.Add(positionals);
         command.Options.Add(force);
         command.SetAction(parseResult =>
         {
-            string document = parseResult.GetValue(documentName)!;
-            IReadOnlyList<string> names = parseResult.GetValue(chapterNames)!
-                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            Result<InferredPositionals.Resolved> resolved =
+                InferredPositionals.Resolve(parseResult.GetValue(positionals)!, 1, 1, database);
+            if (resolved.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, resolved.Error!);
+            (string document, _, string[] rest) = resolved.Value;
+            IReadOnlyList<string> names =
+                rest[0].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             bool forceFlag = parseResult.GetValue(force);
 
             Result result = operations.Delete(document, names, forceFlag);
@@ -134,9 +138,9 @@ public static class ChaptersCommands
 
         foreach (ChapterListing chapter in listings)
         {
-            output.WriteLine($"{chapter.Name} ({chapter.Title})");
+            output.WriteLine($"{chapter.Name} ({chapter.Title}){CommandReporting.MissingNote(chapter.MissingAt)}");
             foreach (SongListing song in chapter.Songs)
-                output.WriteLine($"  {song.Number}. {song.Title}");
+                output.WriteLine($"  {song.Number}. {song.Title}{CommandReporting.MissingNote(song.MissingAt)}");
         }
     }
 }

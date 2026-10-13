@@ -102,4 +102,24 @@ public class ProgramExitCodeTests
 
         Assert.That(File.Exists(Path.Combine(_dataDir, "sb.db")), Is.True);
     }
+
+    [Test]
+    public void UnusableDataDirectory_ReportsStorageErrorInsteadOfCrashing()
+    {
+        // SB_DATA_DIR pointing at an existing *file* makes creating the data directory fail.
+        string blocker = Path.Combine(Path.GetTempPath(), "sb-program-blocker-" + Guid.NewGuid());
+        File.WriteAllText(blocker, "not a directory");
+        Environment.SetEnvironmentVariable("SB_DATA_DIR", blocker);
+        try
+        {
+            int exitCode = RunMain(["documents", "list"], out _, out string error);
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Storage)));
+            Assert.That(error, Does.StartWith("Error:"));
+        }
+        finally
+        {
+            File.Delete(blocker);
+        }
+    }
 }

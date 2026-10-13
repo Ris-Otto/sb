@@ -238,4 +238,41 @@ public class ChaptersCommandsTests
         new SongsRepository(_db).Insert(chapterId, song);
         File.WriteAllText(Path.Combine(ChapterFolder(chapterName), $"{title}.yml"), SongYamlSerializer.Serialize(song));
     }
+
+    [Test]
+    public void Delete_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("chapters", "add", "my-doc", "-n", "chapter-1");
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("chapters", "delete", "chapter-1");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+            Assert.That(Directory.Exists(Path.Combine(_outputFolder, "my-doc", "Chapters", "chapter-1")), Is.False);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Delete_OutsideAnyDocument_WithoutDocumentName_FailsWithValidationError()
+    {
+        Run("chapters", "add", "my-doc", "-n", "chapter-1");
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_outputFolder);
+        try
+        {
+            int exitCode = Run("chapters", "delete", "chapter-1");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
 }

@@ -66,4 +66,57 @@ public class DatabaseTests
 
         Assert.That(actualColumns, Is.EquivalentTo(expectedColumns));
     }
+
+    private static int DocumentCount(Database db) => new DocumentsRepository(db).GetAll().Value.Count;
+
+    [Test]
+    public void InTransaction_Success_CommitsEverything()
+    {
+        using var db = Database.Open("Data Source=:memory:");
+        var documents = new DocumentsRepository(db);
+
+        var result = db.InTransaction(() =>
+        {
+            documents.Insert("a", "/a", "A", null);
+            documents.Insert("b", "/b", "B", null);
+            return Sb.Core.Result.Success();
+        });
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(DocumentCount(db), Is.EqualTo(2));
+    }
+
+    [Test]
+    public void InTransaction_FailureResult_RollsBackEverything()
+    {
+        using var db = Database.Open("Data Source=:memory:");
+        var documents = new DocumentsRepository(db);
+
+        var result = db.InTransaction(() =>
+        {
+            documents.Insert("a", "/a", "A", null);
+            return Sb.Core.Result.Failure(new Sb.Core.Error(Sb.Core.ErrorKind.Conflict, "nope"));
+        });
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(Sb.Core.ErrorKind.Conflict));
+        Assert.That(DocumentCount(db), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void InTransaction_Exception_RollsBackAndReportsStorageError()
+    {
+        using var db = Database.Open("Data Source=:memory:");
+        var documents = new DocumentsRepository(db);
+
+        var result = db.InTransaction<int>(() =>
+        {
+            documents.Insert("a", "/a", "A", null);
+            throw new InvalidOperationException("boom");
+        });
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(Sb.Core.ErrorKind.Storage));
+        Assert.That(DocumentCount(db), Is.EqualTo(0));
+    }
 }

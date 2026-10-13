@@ -79,15 +79,24 @@ public sealed class DocumentOperations(Database database)
         foreach (DocumentRecord document in documentsResult.Value)
         {
             IReadOnlyList<ChapterListing> chapterListings = [];
-            if (includeChapters)
+            IReadOnlyList<SongListing> songListings = [];
+            if (includeChapters || includeSongs)
             {
-                Result<IReadOnlyList<ChapterListing>> built = _chapterOperations.ListForDocument(document.Id, includeSongs);
+                Result<IReadOnlyList<ChapterListing>> built =
+                    _chapterOperations.ListForDocument(document, includeSongs);
                 if (built.IsFailure)
                     return Result<IReadOnlyList<DocumentListing>>.Failure(built.Error!);
-                chapterListings = built.Value;
+
+                if (includeChapters)
+                    chapterListings = built.Value;
+                else
+                    songListings = built.Value.SelectMany(c => c.Songs).OrderBy(s => s.Number).ToList();
             }
 
-            listings.Add(new DocumentListing(document.Filename, document.Title, chapterListings));
+            listings.Add(new DocumentListing(document.Filename, document.Title, chapterListings, songListings)
+            {
+                MissingAt = Directory.Exists(document.Path) ? null : document.Path
+            });
         }
 
         return Result<IReadOnlyList<DocumentListing>>.Success(listings);
@@ -125,6 +134,10 @@ public sealed class DocumentOperations(Database database)
         if (documentResult.IsFailure)
             return documentResult;
         DocumentRecord document = documentResult.Value;
+
+        Result folderCheck = MismatchDetector.CheckDocumentFolder(document);
+        if (folderCheck.IsFailure)
+            return folderCheck;
 
         Result nameValidity = NameValidator.Validate(newName);
         if (nameValidity.IsFailure)
@@ -178,9 +191,21 @@ public sealed class DocumentOperations(Database database)
             return documentResult;
         DocumentRecord document = documentResult.Value;
 
+        Result folderCheck = MismatchDetector.CheckDocumentFolder(document);
+        if (folderCheck.IsFailure)
+            return folderCheck;
+
         Result<IReadOnlyList<ChapterRecord>> chaptersResult = _chapters.GetAllForDocument(document.Id);
         if (chaptersResult.IsFailure)
             return chaptersResult;
+
+        // Nothing is written unless every chapter folder the database expects is there (FR-1.7.5).
+        foreach (ChapterRecord chapter in chaptersResult.Value)
+        {
+            Result chapterCheck = MismatchDetector.CheckChapterFolder(document, chapter);
+            if (chapterCheck.IsFailure)
+                return chapterCheck;
+        }
 
         DocumentTemplate template = DocumentTemplate.Create(document.Title, document.Subtitle).Value;
 
@@ -194,8 +219,6 @@ public sealed class DocumentOperations(Database database)
                 ? ChapterEmitter.RenderSingleColumn(chapter.Title, OrderAsListed(songsResult.Value))
                 : ChapterEmitter.RenderMultiColumn(chapter.Title, ComputePages(songsResult.Value, ordering), LayoutDefaults.ColumnWidth);
 
-            string chapterFolder = DocumentLayout.ChapterFolder(document.Path, chapter.Name);
-            Directory.CreateDirectory(chapterFolder);
             File.WriteAllText(DocumentLayout.ChapterTexFile(document.Path, chapter.Name), chapterTex);
 
             template = template.WithChapterAdded(DocumentLayout.ChapterTexInputPath(chapter.Name));

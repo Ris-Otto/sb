@@ -50,7 +50,7 @@ instead of inventing synthetic ones.
 - [x] **1.3** Contiguous renumbering logic (FR-1.4.3): given an ordered list of songs and an insertion/deletion at
   position `p`, shift every song's `Number` at/after `p` by ±1.
   - **Tests**: insert at start/middle/end/append; delete at start/middle/end/only-element; insert with no explicit
-    position (append, gets `max+1`); deleting the last song doesn't throw on an empty list afterward.
+    position (append, gets the next sequential number); deleting the last song doesn't throw on an empty list afterward.
 
 ## Milestone 2 — Database (FR-1.7, NFR-2.5.6)
 
@@ -107,7 +107,8 @@ instead of inventing synthetic ones.
     reports the leftover rather than silently proceeding).
 
 - [x] **4.3** `\vspace` cosmetic correction: given two columns of known final heights on a page, compute the
-  `\vspace` amount needed so both start at the same line (FR-1.2.7).
+  `\vspace` amount needed so both columns *end* at the same line (FR-1.2.7; they already start together because
+  both minipages are `[t]` top-aligned).
   - **Tests**: equal-height columns → zero vspace; a known height difference → the exact expected vspace value.
 
 ## Milestone 5 — Ordering (FR-1.3)
@@ -135,15 +136,23 @@ instead of inventing synthetic ones.
 - [x] **5.4** Per-page orchestration: longest-song-first placement (FR-1.3.8), then FFD (5.2) with fallback to
   exact search (5.3) per page, repeating until all songs are placed (FR-1.3.9).
   - **Tests**: a multi-page chapter (using the full `TestFiles` fixture set) produces the expected number of pages
-    and the expected per-page song groupings; verify every page but the last meets the 95% target.
+    and the expected per-page song groupings; verify every page but the last meets the 95% target. (In practice the
+    real-fixture test checks fidelity only — FR-1.3.13 lets a page fall short when the pool doesn't combine well —
+    and the 95% check is on a synthetic set with many combinations.)
+  - **Updated (A-2, A-3, A-5):** the per-page choice is now `SpaceEfficientPaginator.ChooseCompanions`: FFD first,
+    then the exact search at several capacities, each candidate set in three orders, every attempt scored by
+    actually placing it with `ColumnFiller` (so the paragraph rule, FR-1.3.17, and the even-page rule, FR-1.3.6, are
+    respected), and the one placing the most lines wins (FR-1.3.18).
 
 - [x] **5.5** Page-spanning continuation metadata (FR-1.3.15, FR-1.3.16): when a song is too long to fit within a
   single page's two columns combined, FR-1.3.6's even-page restriction is moot — it continues onto as many further
   pages as needed regardless of parity. This is already true behaviorally after the bug-fix round following M5's
   review (`ColumnFiller`'s oversized-candidate handling and `SpaceEfficientPaginator`'s carry-over fix don't check
-  page parity), but isn't yet asserted against this specific requirement, and `SongFragment` doesn't yet expose
+  page parity), but wasn't yet asserted against this specific requirement, and `SongFragment` didn't yet expose
   *whether* a given split crossed a page boundary (vs. just column 1→2 within one page) — Milestone 6 needs that
-  distinction to know when a continuation notice (FR-1.3.16) is required.
+  distinction to know when a continuation notice (FR-1.3.16) is required. (Done: `SongFragment` now has
+  `ContinuesOnNextPage`/`ContinuesFromPreviousPage`. Note that since A-5 `ColumnFiller` *does* take the page parity
+  into account, via `allowPageOverflow`, but still lets a song longer than a page spill, per FR-1.3.15.)
   - Extend `SongFragment`/`SongSplitter` with that page-vs-column distinction (e.g. flags on the fragment, set by
     whichever caller performs the split: `ColumnFiller`'s own column 1→2 split is always same-page;
     `ColumnFiller`'s too-long-for-either-column excess and `Paginator`/`SpaceEfficientPaginator`'s cross-page splits
@@ -168,11 +177,13 @@ instead of inventing synthetic ones.
   - **Tests**: generated chapter `.tex` uses `\chapter*{...}` with the chapter's display title substituted, and
     never emits the numbered form.
 
-- [x] **6.4** Song emission: each song in a minipage column, title as `\paragraph*{<title>}`, body as free text
-  beneath it (FR-1.12.6–FR-1.12.8), using the column/page placement from Milestone 5.
-  - **Tests**: a song's generated LaTeX contains `\paragraph*{<its title>}` followed by its exact text lines
-    (byte-for-byte, to guard NFR-2.5.3's fidelity requirement — no reflowing); two songs placed in the same page
-    both appear inside `minipage` environments.
+- [x] **6.4** Song emission: each column a minipage, each song's title as `\paragraph*{<number>. <title>}\mbox{}\\`
+  followed by its `Mel:`/`Text:` lines when it has a melody/writer, body as free text beneath them
+  (FR-1.12.6–FR-1.12.8, FR-1.12.11–FR-1.12.15), using the column/page placement from Milestone 5. (Originally just
+  `\paragraph*{<title>}`; extended by addendums A-1 and A-4.)
+  - **Tests**: a song's generated LaTeX contains `\paragraph*{<number>. <its title>}` followed by its exact text
+    lines (byte-for-byte, to guard NFR-2.5.3's fidelity requirement — no reflowing); two songs placed in the same
+    page both appear inside `minipage` environments; melody and writer appear on their own lines when present.
 
 - [x] **6.5** No hard-coded LaTeX engine (FR-1.12.9): confirm the generated source doesn't depend on
   engine-specific packages (e.g. `fontspec`, which requires XeLaTeX/LuaLaTeX) without the user opting in; document
@@ -182,9 +193,11 @@ instead of inventing synthetic ones.
     as the template evolves.
 
 - [x] **6.6** Continuation notices (FR-1.3.16, FR-1.12.10, NFR-2.3.3): when rendering a song fragment flagged (via
-  5.5) as ending with more content on a later page, append a continuation marker (e.g. "(continued)"); when
-  rendering a fragment flagged as resuming from an earlier page, prepend a corresponding marker (e.g. "(continued
-  from previous page)"). No marker for a plain column 1→2 split within the same page.
+  5.5) as ending with more content on a later page, append a continuation marker, `(forts.)` (originally
+  "(continued)"); when rendering a fragment flagged as resuming from an earlier page, prepend the same marker
+  (originally "(continued from previous page)"; changed by A-2). No marker for a plain column 1→2 split within the
+  same page, and none in single-column mode, where SB can't see the page breaks. Since A-5 the marker lines count
+  towards fragment heights.
   - **Tests**: a song split across pages renders both markers on the correct fragments; a song split only across
     columns (same page) renders neither marker; marker text is clearly separate from the song's own lyric lines
     (not mistaken for fidelity-protected content under NFR-2.5.3).
@@ -240,14 +253,15 @@ instead of inventing synthetic ones.
   belongs to a chapter (FR-1.5.3), so `document-name`/`chapter-name` are required even though they were missing from
   the original flag list (gap fixed during implementation, mirroring FR-1.9.1's title/subtitle gap from Milestone 7).
   `text` accepts literal text or a file path (reuse `TestFiles/*.txt` fixtures for the file-path case); `--number`
-  omitted → next sequential, given → shifts later songs up (FR-1.11.1, FR-1.4.3).
+  omitted → next sequential, given → shifts later songs up (FR-1.11.1, FR-1.4.3). Numbers are document-wide
+  (A-6), and since A-8 document-name and chapter-name are inferred from the working directory when omitted.
   - **Tests**: literal text vs. file-path text produce identical stored content; omitting `--number` assigns
-    `max+1`; an explicit `--number` in the middle shifts existing songs correctly (reuse Milestone 1.3's logic —
+    the next sequential number; an explicit `--number` in the middle shifts existing songs correctly (reuse Milestone 1.3's logic —
     this test is about the CLI wiring, not re-testing the shift algorithm itself); duplicate title in the same
     chapter rejected.
 
 - [x] **9.2** `songs delete <document-name> <song-title>`: no cascade (songs have no children), but still
-  triggers renumbering of later songs (FR-1.4.3).
+  triggers renumbering of later songs, in every chapter of the document (FR-1.4.3, A-6), atomically (A-8).
   - **Tests**: deleting a middle song shifts later numbers down by one; deleting a nonexistent song title reported
     as not-found.
 
@@ -255,7 +269,7 @@ instead of inventing synthetic ones.
   - **Tests**: unfiltered vs. chapter-filtered listing.
 
 - [x] **9.4** `songs modify <document-name> <song-title> [--title] [--writer] [--melody] [--chapter] [--number]`
-  (one or more of the optional fields).
+  (one or more of the optional fields). `--chapter` alone keeps the song's number (numbers are document-wide, A-6).
   - **Tests**: modifying only one field leaves the others untouched; modifying `--number` triggers the same
     shift semantics as `add` with an explicit number; modifying `--chapter` moves the song's file and DB row
     atomically (ties back to Milestone 2.2); modifying to a title that collides with another song in the
@@ -264,14 +278,16 @@ instead of inventing synthetic ones.
 ## Milestone 10 — Cross-cutting polish
 
 - [x] **10.1** Working-directory argument inference (FR-1.8.4): running a command inside a document/chapter folder
-  infers document-name instead of requiring it. Only applies to `documents delete`/`build`, `chapters add`/`list`,
-  and `songs list` — the commands where document-name is the *only* positional argument. System.CommandLine has no
-  way to leave a leading positional unfilled when other required positionals follow it (confirmed empirically: with
-  fewer tokens than declared positions it reports a missing argument rather than skipping the optional one), so
-  `documents rename`, `chapters delete`, and `songs add`/`delete`/`modify` keep document-name required rather than
-  reshuffling their already-shipped argument order. Chapter-name inference wasn't applicable anywhere in the current
-  command set for the same reason, or because inferring it would silently change existing flag semantics (e.g.
-  `songs list --chapter-name` omitted means "no filter", not "infer from cwd").
+  infers document-name instead of requiring it. Originally only for the commands where document-name is the *only*
+  positional argument (`documents delete`/`build`, `chapters add`/`list`, `songs list`), because System.CommandLine has
+  no way to leave a leading positional unfilled when other required positionals follow it (confirmed empirically: with
+  fewer tokens than declared positions it reports a missing argument rather than skipping the optional one).
+  **Extended in addendum A-8** to every command, including `documents rename`, `chapters delete` and
+  `songs add`/`delete`/`modify`, and to chapter-name for `songs add`: those commands now declare one array argument
+  with an arity that lets the leading names be absent, and `InferredPositionals.Resolve` assigns the values (the
+  last ones are the command's own arguments; what precedes them is the document and/or chapter name). Their `--help`
+  therefore shows one `arguments` placeholder with a usage description instead of separate named arguments.
+  `songs list --chapter-name` omitted still means "no filter", not "infer from cwd".
   - **Tests**: running `songs list` with cwd inside a document folder lists that document's songs without passing
     document-name; an explicit argument still overrides the inferred value; cwd outside any document with no
     argument given is a clear Validation error. Same coverage (minus the override case) for the other four commands.

@@ -55,7 +55,7 @@ public sealed class ChaptersRepository(Database database)
         return Result<ChapterRecord>.Success(ReadRecord(reader));
     }
 
-    /// <summary>All chapters belonging to a document, in the order they were added (FR-1.9.2).</summary>
+    /// <summary>All chapters belonging to a document, in the order they were added (FR-1.10.3).</summary>
     public Result<IReadOnlyList<ChapterRecord>> GetAllForDocument(long documentId)
     {
         try

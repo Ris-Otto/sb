@@ -52,7 +52,8 @@ public sealed class SongsRepository(Database database)
             new SongRecord(reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.GetInt32(3)));
     }
 
-    /// <summary>All songs belonging to a chapter, in number order (FR-1.4.1, FR-1.9.2).</summary>
+    /// <summary>All songs belonging to a chapter, in number order (FR-1.11.3). The numbers are
+    /// document-wide (FR-1.4.1), so a chapter's songs need not be numbered from 1.</summary>
     public Result<IReadOnlyList<SongRecord>> GetAllForChapter(long chapterId)
     {
         try

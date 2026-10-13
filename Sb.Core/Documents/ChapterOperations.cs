@@ -20,6 +20,10 @@ public sealed class ChapterOperations(Database database)
             return Result<ChapterRecord>.Failure(documentResult.Error!);
         DocumentRecord document = documentResult.Value;
 
+        Result folderCheck = MismatchDetector.CheckDocumentFolder(document);
+        if (folderCheck.IsFailure)
+            return Result<ChapterRecord>.Failure(folderCheck.Error!);
+
         Result<IReadOnlyList<ChapterRecord>> existingResult = _chapters.GetAllForDocument(document.Id);
         if (existingResult.IsFailure)
             return Result<ChapterRecord>.Failure(existingResult.Error!);
@@ -143,14 +147,18 @@ public sealed class ChapterOperations(Database database)
         if (documentResult.IsFailure)
             return Result<IReadOnlyList<ChapterListing>>.Failure(documentResult.Error!);
 
-        return ListForDocument(documentResult.Value.Id, includeSongs);
+        return ListForDocument(documentResult.Value, includeSongs);
     }
 
-    internal Result<IReadOnlyList<ChapterListing>> ListForDocument(long documentId, bool includeSongs)
+    internal Result<IReadOnlyList<ChapterListing>> ListForDocument(DocumentRecord document, bool includeSongs)
     {
-        Result<IReadOnlyList<ChapterRecord>> chaptersResult = _chapters.GetAllForDocument(documentId);
+        Result<IReadOnlyList<ChapterRecord>> chaptersResult = _chapters.GetAllForDocument(document.Id);
         if (chaptersResult.IsFailure)
             return Result<IReadOnlyList<ChapterListing>>.Failure(chaptersResult.Error!);
+
+        // Folders and files the database expects but that aren't on disk are flagged, not hidden (FR-1.7.5).
+        HashSet<string> missingChapters = MismatchDetector.FindChapterMismatches(document, chaptersResult.Value)
+            .Select(m => m.Name).ToHashSet();
 
         var chapterListings = new List<ChapterListing>();
         foreach (ChapterRecord chapter in chaptersResult.Value)
@@ -162,10 +170,20 @@ public sealed class ChapterOperations(Database database)
                 if (songsResult.IsFailure)
                     return Result<IReadOnlyList<ChapterListing>>.Failure(songsResult.Error!);
 
-                songListings = songsResult.Value.Select(s => new SongListing(s.Title, s.Number)).ToList();
+                Dictionary<string, string> missingSongs = MismatchDetector
+                    .FindSongMismatches(document, chapter, songsResult.Value)
+                    .ToDictionary(m => m.Name, m => m.ExpectedPath);
+                songListings = songsResult.Value
+                    .Select(s => new SongListing(s.Title, s.Number) { MissingAt = missingSongs.GetValueOrDefault(s.Title) })
+                    .ToList();
             }
 
-            chapterListings.Add(new ChapterListing(chapter.Name, chapter.Title, songListings));
+            chapterListings.Add(new ChapterListing(chapter.Name, chapter.Title, songListings)
+            {
+                MissingAt = missingChapters.Contains(chapter.Name)
+                    ? DocumentLayout.ChapterFolder(document.Path, chapter.Name)
+                    : null
+            });
         }
 
         return Result<IReadOnlyList<ChapterListing>>.Success(chapterListings);

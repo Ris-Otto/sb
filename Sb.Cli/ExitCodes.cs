@@ -3,8 +3,8 @@ using Sb.Core;
 namespace Sb.Cli;
 
 /// <summary>Maps an <see cref="Sb.Core"/> <see cref="Result"/> to a process exit code (NFR-2.2.2):
-/// 0 for success, a distinct non-zero range per <see cref="ErrorKind"/> otherwise. A first-pass
-/// scheme — Milestone 10.3 is where this gets exercised end-to-end for every command.</summary>
+/// 0 for success, a distinct non-zero code per <see cref="ErrorKind"/> otherwise (Validation 1, Conflict 2,
+/// NotFound 3, Storage 4).</summary>
 public static class ExitCodes
 {
     public const int Success = 0;

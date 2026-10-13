@@ -208,4 +208,51 @@ public class ChapterEmitterTests
         }
         return count;
     }
+
+    [Test]
+    public void RenderSingleColumn_KeepsHeaderAndFirstParagraphTogether()
+    {
+        Song song = Song.Create("T", ["a", "b", "", "c"], 1, writer: "W").Value;
+
+        string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
+
+        // `\\*` forbids a page break after the line; the last kept line and everything after allow one.
+        string expected = string.Join(
+            Environment.NewLine,
+            "\\paragraph*{1. T}\\mbox{}\\\\*", "Text: W\\\\*", "a\\\\*", "b\\\\", "\\\\", "c\\\\");
+        Assert.That(rendered, Does.Contain(expected));
+    }
+
+    [Test]
+    public void RenderSingleColumn_FirstParagraphLongerThanTheCap_OnlyKeepsTheCappedPartTogether()
+    {
+        Song song = Song.Create("T", Enumerable.Range(1, 15).Select(i => $"line {i}").ToArray(), 1).Value;
+
+        string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
+
+        // Title + the first 10 lyric lines are bound together: 10 non-breaking line ends (title + 9 lines).
+        Assert.That(CountOccurrences(rendered, "\\\\*"), Is.EqualTo(10));
+        Assert.That(rendered, Does.Contain("line 10\\\\" + Environment.NewLine + "line 11\\\\"));
+    }
+
+    [Test]
+    public void RenderSingleColumn_SongStartingWithAnEmptyLine_StillKeepsTheTitleWithTheNextLine()
+    {
+        Song song = Song.Create("T", ["", "a", "b"], 1).Value;
+
+        string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
+
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. T}\\mbox{}\\\\*" + Environment.NewLine + "\\\\" + Environment.NewLine));
+    }
+
+    [Test]
+    public void RenderMultiColumn_StillUsesPlainLineBreaks_NoNonBreakingOnes()
+    {
+        var fragment = SongFragment.Whole(MakeSong("A", "rad 1", "rad 2"), ColumnWidth);
+        var page = new Page(1, [fragment], [], fragment.Height, 0);
+
+        string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
+
+        Assert.That(rendered, Does.Not.Contain("\\\\*"));
+    }
 }

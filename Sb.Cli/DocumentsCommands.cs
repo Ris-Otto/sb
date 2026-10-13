@@ -7,10 +7,10 @@ namespace Sb.Cli;
 
 /// <summary>Builds the `documents` command group (FR-1.9): thin argument parsing and result-to-
 /// exit-code/console translation only — all behavior lives in <see cref="DocumentOperations"/>
-/// (NFR-2.2.1/2.2.2). `delete` and `build` support working-directory inference (FR-1.8.4) for
-/// document-name, since it's their only positional argument; `create` has nothing to infer from
-/// (it's naming something new) and `rename` has a second required positional after document-name,
-/// which rules it out — see <see cref="DocumentNameResolution"/>.</summary>
+/// (NFR-2.2.1/2.2.2). Every command that refers to an existing document (`delete`, `build`, `rename`) infers its
+/// document-name from the working directory when omitted (FR-1.8.4) — via <see cref="DocumentNameResolution"/> where
+/// it is the only positional, via <see cref="InferredPositionals"/> for `rename`; `create` has nothing to infer
+/// from, since it names something new.</summary>
 public static class DocumentsCommands
 {
     public static Command Build(DocumentOperations operations, Database database, Func<string, bool> confirm)
@@ -19,7 +19,7 @@ public static class DocumentsCommands
         documents.Subcommands.Add(BuildCreate(operations));
         documents.Subcommands.Add(BuildList(operations));
         documents.Subcommands.Add(BuildDelete(operations, database, confirm));
-        documents.Subcommands.Add(BuildRename(operations));
+        documents.Subcommands.Add(BuildRename(operations, database));
         documents.Subcommands.Add(BuildBuild(operations, database));
         return documents;
     }
@@ -54,7 +54,7 @@ public static class DocumentsCommands
     private static Command BuildList(DocumentOperations operations)
     {
         var chapters = new Option<bool>("--chapters", "-c") { Description = "Include each document's chapters." };
-        var songs = new Option<bool>("--songs", "-s") { Description = "Include each chapter's songs (requires --chapters)." };
+        var songs = new Option<bool>("--songs", "-s") { Description = "Include songs: under each chapter with --chapters, otherwise listed directly under each document." };
 
         var command = new Command("list", "List documents.");
         command.Options.Add(chapters);
@@ -114,18 +114,22 @@ public static class DocumentsCommands
         return command;
     }
 
-    private static Command BuildRename(DocumentOperations operations)
+    private static Command BuildRename(DocumentOperations operations, Database database)
     {
-        var documentName = new Argument<string>("document-name") { Description = "The document's current name." };
-        var newName = new Argument<string>("new-name") { Description = "The document's new name." };
+        var positionals = InferredPositionals.Declare("[document-name] new-name", required: 1, inferableLeading: 1);
 
         var command = new Command("rename", "Rename a document.");
-        command.Arguments.Add(documentName);
-        command.Arguments.Add(newName);
+        command.Arguments.Add(positionals);
         command.SetAction(parseResult =>
         {
-            Result result = operations.Rename(parseResult.GetValue(documentName)!, parseResult.GetValue(newName)!);
-            return CommandReporting.Report(parseResult, result, () => $"Renamed document to '{parseResult.GetValue(newName)}'.");
+            Result<InferredPositionals.Resolved> resolved =
+                InferredPositionals.Resolve(parseResult.GetValue(positionals)!, 1, 1, database);
+            if (resolved.IsFailure)
+                return CommandReporting.ReportFailure(parseResult, resolved.Error!);
+            (string documentName, _, string[] rest) = resolved.Value;
+
+            Result result = operations.Rename(documentName, rest[0]);
+            return CommandReporting.Report(parseResult, result, () => $"Renamed document to '{rest[0]}'.");
         });
         return command;
     }
@@ -187,12 +191,14 @@ public static class DocumentsCommands
 
         foreach (DocumentListing document in listings)
         {
-            output.WriteLine($"{document.Name} ({document.Title})");
+            output.WriteLine($"{document.Name} ({document.Title}){CommandReporting.MissingNote(document.MissingAt)}");
+            foreach (SongListing song in document.Songs)
+                output.WriteLine($"  {song.Number}. {song.Title}{CommandReporting.MissingNote(song.MissingAt)}");
             foreach (ChapterListing chapter in document.Chapters)
             {
-                output.WriteLine($"  {chapter.Name} ({chapter.Title})");
+                output.WriteLine($"  {chapter.Name} ({chapter.Title}){CommandReporting.MissingNote(chapter.MissingAt)}");
                 foreach (SongListing song in chapter.Songs)
-                    output.WriteLine($"    {song.Number}. {song.Title}");
+                    output.WriteLine($"    {song.Number}. {song.Title}{CommandReporting.MissingNote(song.MissingAt)}");
             }
         }
     }

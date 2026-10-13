@@ -2,12 +2,14 @@ namespace Sb.Core;
 
 /// <summary>
 /// Space-efficient pagination (§2.2): each page starts with the longest remaining song
-/// (FR-1.3.8), then fills the rest of the page's capacity from the remaining pool via
-/// First-Fit-Decreasing (<see cref="FirstFitDecreasing"/>), falling back to the exact subset-sum
-/// search (<see cref="SubsetSumSearch"/>) when FFD doesn't reach the 95% fill target (FR-1.3.9,
-/// FR-1.3.12). The overflow caveats (§2.2) still apply: a song may split across column 1→2
-/// (<see cref="ColumnFiller"/>) or, on an odd page, across the page boundary (FR-1.3.5) — here, by
-/// offering the next pool song as a candidate to fill a page's remaining leftover.
+/// (FR-1.3.8), then fills the rest of the page from the remaining pool (<c>ChooseCompanions</c>):
+/// First-Fit-Decreasing (<see cref="FirstFitDecreasing"/>) first, then the exact subset-sum search
+/// (<see cref="SubsetSumSearch"/>) at several capacities (FR-1.3.9, FR-1.3.12), with every candidate
+/// set scored by actually placing it with <see cref="ColumnFiller"/> so the paragraph rule
+/// (FR-1.3.17) and the even-page rule (FR-1.3.6) are accounted for (FR-1.3.18). The overflow caveats
+/// (§2.2) apply: a song may split across column 1→2, or, on an odd page, across the page boundary
+/// (FR-1.3.5) — here, by offering the next pool song as a candidate to fill a page's remaining
+/// leftover.
 /// </summary>
 public static class SpaceEfficientPaginator
 {

@@ -6,13 +6,10 @@ namespace Sb.Cli;
 
 /// <summary>
 /// Resolves a command's document-name from the value given on the command line, falling back to
-/// working-directory inference (FR-1.8.4) when it's omitted. Only usable for commands where
-/// document-name is the sole positional argument — see <see cref="DocumentsCommands"/>,
-/// <see cref="ChaptersCommands"/>, and <see cref="SongsCommands"/> for which commands that is and why:
-/// System.CommandLine has no way to leave a *leading* positional argument unfilled when other required
-/// positionals follow it (confirmed empirically — with fewer tokens than declared positions, it
-/// reports a missing argument rather than skipping the optional one), so commands with more than one
-/// positional keep document-name required and don't support inference.
+/// working-directory inference (FR-1.8.4) when it's omitted. For commands where document-name is the sole
+/// positional argument, which can simply be declared optional. System.CommandLine has no way to leave a
+/// *leading* positional argument unfilled when other required positionals follow it, so the commands with
+/// more than one positional use <see cref="InferredPositionals"/> instead.
 /// </summary>
 public static class DocumentNameResolution
 {

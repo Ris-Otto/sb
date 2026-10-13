@@ -44,6 +44,54 @@ public class NameValidatorTests
     }
 
     [Test]
+    public void Validate_SingleDot_Fails()
+    {
+        var result = NameValidator.Validate(".");
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Validation));
+    }
+
+    [TestCase(" leading")]
+    [TestCase("trailing ")]
+    public void Validate_LeadingOrTrailingWhitespace_Fails(string name)
+    {
+        var result = NameValidator.Validate(name);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Message, Does.Contain("whitespace"));
+    }
+
+    [Test]
+    public void Validate_TrailingDot_FailsByDefault_AllowedForSongTitles()
+    {
+        Assert.That(NameValidator.Validate("Chapter.").IsFailure, Is.True);
+        Assert.That(NameValidator.Validate("Och så vidare.", allowTrailingDot: true).IsSuccess, Is.True);
+    }
+
+    [TestCase("CON")]
+    [TestCase("nul")]
+    [TestCase("Aux")]
+    [TestCase("COM1")]
+    [TestCase("lpt9")]
+    [TestCase("CON.backup")]
+    public void Validate_WindowsReservedDeviceName_Fails(string name)
+    {
+        var result = NameValidator.Validate(name, allowTrailingDot: true);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Message, Does.Contain("reserved"));
+    }
+
+    [TestCase("Console")]
+    [TestCase("COM10")]
+    [TestCase("Nulla")]
+    public void Validate_NameMerelyStartingLikeAReservedName_Succeeds(string name)
+    {
+        Assert.That(NameValidator.Validate(name).IsSuccess, Is.True);
+    }
+
+    [Test]
     public void Validate_ContainsDotDot_Fails()
     {
         var result = NameValidator.Validate("..");

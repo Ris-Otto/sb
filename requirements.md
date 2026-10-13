@@ -33,7 +33,8 @@ it shall not overflow or truncate the line.
 ### 1.3 Ordering
 
 - FR-1.3.1: SB shall be able to order songs in the most space-efficient arrangement for the document.
-- FR-1.3.2: SB shall be able to order songs in the exact order supplied by the user ("as-listed").
+- FR-1.3.2: SB shall be able to order songs in the exact order supplied by the user ("as-listed"), which is the order 
+of their song numbers (FR-1.4); the CLI calls this mode `as-listed`, and §1.9.5's "number-wise" is the same thing.
 - FR-1.3.3: The ordering mode shall be user-selectable (e.g. via a `build` flag/argument).
 - FR-1.3.4: A song may overflow from the first column of a page into the second column.
 - FR-1.3.5: On an odd (left-side) page, a song may overflow from the second column into the next page.
@@ -45,15 +46,16 @@ caveats (FR-1.3.4–1.3.6).
 then determine which remaining songs fill out the rest of that page.
 - FR-1.3.9: The space-efficient algorithm shall operate on a per-page basis, aiming to fill as much of both columns 
 as possible, subject to the overflow caveats (FR-1.3.4–1.3.6).
-- FR-1.3.10: The best-fit result shall aim to fill 95% of the remaining space on a page.
+- FR-1.3.10: The best-fit result shall aim to fill 95% of a page's two columns combined, measured in lines actually 
+placed (FR-1.3.18) rather than in summed song heights.
 - FR-1.3.11: Since songs are placed sequentially (one column overflowing into the next, per FR-1.3.4–1.3.6), the fill 
 a set of songs achieves depends only on which songs are chosen, not the order they are evaluated in. SB shall 
 therefore select each page's remaining songs via subset-sum / bounded-knapsack optimization over song heights 
 (quantized to whole output lines, consistent with FR-1.2.9) against the page's remaining capacity — not via 
 permutation enumeration.
 - FR-1.3.12: As a fast path, SB shall first try a First-Fit-Decreasing (FFD) greedy fill — remaining songs sorted 
-longest-first, added while they still fit — and use that result as-is if it already reaches the 95% fill target 
-(FR-1.3.10), skipping the exact search (FR-1.3.11) for that page.
+longest-first, added while they still fit — and use that result as-is if the page it actually produces already 
+reaches the 95% fill target (FR-1.3.10), skipping the exact search (FR-1.3.11) for that page.
 - FR-1.3.13: If the remaining songs genuinely cannot reach the 95% target for a page (e.g. too few songs remain in 
 the chapter), SB shall use the best achievable fill for that page rather than erroring or requiring a fallback 
 algorithm.
@@ -65,7 +67,8 @@ parity, since no alternative placement exists.
 - FR-1.3.16: Whenever a song's content is split across a page boundary (FR-1.3.5 or FR-1.3.15), SB shall ensure a 
 continuation notice is shown to the reader, marking both where the song breaks off and where it resumes. A split 
 from column 1 to column 2 within the same page (FR-1.3.4) requires no such notice, since both halves are visible 
-on the same page at once.
+on the same page at once. In single-column mode (§2.1) LaTeX itself decides where pages break, invisibly to SB, so 
+no notice can be placed correctly and none is emitted; this requirement and FR-1.12.10 apply to multi-column mode.
 - FR-1.3.17: A song shall only be started (given a title) in a column or page slot if at least one whole paragraph of
 its text fits there, a paragraph being the lines up to the next empty line (a song with no empty line is a single
 paragraph). The empty line terminating the paragraph need not fit; an empty line falling exactly on a break is
@@ -84,7 +87,9 @@ the page shall be chosen. The 95% fill target (FR-1.3.10) is measured on lines a
 - FR-1.4.2: Numbering shall follow either the order the songs were given in, or a user-specified order.
 - FR-1.4.3: Numbers shall stay contiguous automatically: deleting a song shall shift every later song's number down 
 by one, and adding or moving a song to an explicit position shall shift every song from that position onward up by 
-one. A song's number is its current sequential position, not an independently stable identifier.
+one. A song's number is its current sequential position, not an independently stable identifier. The numbering is
+document-wide: it runs through all of the document's chapters, so these shifts apply to songs in every chapter, and
+moving a song to another chapter does not change its number unless a new one is given. (Addendum A-6.)
 
 ### 1.5 Storage — documents and chapters
 
@@ -113,11 +118,21 @@ for the same reason as FR-1.7.2 — `documents build` needs each chapter's displ
 (FR-1.12.5).
 - FR-1.7.4: The database's `songs` records shall contain: song title, song number, chapter id, internal id.
 - FR-1.7.5: If a file or folder is not found at the path recorded in the database, SB shall inform the user of the 
-mismatch rather than failing silently or guessing.
+mismatch rather than failing silently or guessing. Concretely: the `list` commands (`documents`, `chapters`, `songs`) 
+show each missing document folder, chapter folder or song file with its expected path, as information (the exit code 
+stays 0); `documents build`, `documents rename`, `chapters add`, `songs add` and `songs modify` stop with a Storage 
+error naming the missing folder, without writing anything and without recreating it; deleting something whose files 
+are already gone still removes the database entry, and reports the file-system cleanup problem (FR-1.7.6). 
+(Addendum A-10.)
 - FR-1.7.6: Any structural operation SB itself performs (`create`, `add`, `rename`, `delete`) shall update the 
 filesystem and the database together as a single atomic step; if either half fails, the whole operation shall be 
 rolled back so no orphaned file/folder or dangling database row is left behind as a direct result of SB's own 
-actions. (The mismatch-detection in FR-1.7.5 is for drift caused outside of SB, not for SB's own operations.)
+actions. (The mismatch-detection in FR-1.7.5 is for drift caused outside of SB, not for SB's own operations.) The 
+renumbering that `songs add`/`delete`/`modify` cause in other songs (FR-1.4.3) is part of the same atomic step: the 
+affected files are written with an undo, and all database rows change in one transaction, so a failure part-way 
+leaves every file and number as it was. The one deliberate exception is the final removal of a deleted song's own 
+file, which has no cheap undo: it happens after the database has committed, and a failure there is reported as a 
+cleanup problem instead of being rolled back. (Addendum A-8.)
 
 ### 1.8 CLI — general
 
@@ -125,10 +140,18 @@ actions. (The mismatch-detection in FR-1.7.5 is for drift caused outside of SB, 
 - FR-1.8.2: Command fields marked 'Required' shall be command arguments; all other fields shall be flags.
 - FR-1.8.3: Every command's flags/options shall provide an abbreviated alias (e.g. a short form alongside the long form).
 - FR-1.8.4: When the current working directory is a document or chapter directory, SB shall infer the corresponding 
-document name/chapter name argument instead of requiring it explicitly.
+document name/chapter name argument instead of requiring it explicitly. This applies to every command that takes a 
+document name (`documents delete`/`rename`/`build`, `chapters add`/`delete`/`list`, `songs add`/`delete`/`modify`/`list`) 
+and to the chapter name of `songs add`; an explicitly given name always wins. A command given fewer positional 
+arguments than it declares treats the missing leading ones as inferred: for `songs add`, a single leading value is the 
+chapter name (the document being inferred), and none at all means both come from the working directory. Where 
+inference is not possible a clear Validation error says which name is missing. Wherever FR-1.9–1.11 call a document 
+name "required", this is subject to FR-1.8.4. (Addendum A-8.)
 - FR-1.8.5: Deleting a document or chapter shall cascade — also deleting the chapters/songs (and files) it contains. 
 Because this is destructive and irreversible, `delete` shall prompt for confirmation before cascading into a 
-non-empty document/chapter, unless a `--force`/`-f` flag is given to skip the prompt (e.g. for scripting).
+non-empty document/chapter, unless a `--force`/`-f` flag is given to skip the prompt (e.g. for scripting). The prompt 
+belongs to the front-end (NFR-2.2.1): the core refuses with a Conflict error unless told to force, and the CLI turns 
+that into the prompt.
 - FR-1.8.6: Names shall be unique within their scope: a document's name among all documents, a chapter's name within 
 its document, and a song's title within its chapter. `create`/`add`/`rename` shall reject a name that already exists 
 in that scope with a clear error, rather than silently disambiguating or allowing the duplicate.
@@ -137,22 +160,31 @@ clear error naming what wasn't found, rather than failing silently or no-op'ing.
 - FR-1.8.8: Since document/chapter names and song titles are used directly as folder/file names on disk, 
 `create`/`add`/`rename` shall validate names against a safe character set and reject (with a clear error) any name 
 containing path separators, `..` segments, or other filesystem-illegal characters, rather than silently sanitizing 
-them.
+them. The check shall be a platform-independent superset of what Windows rejects, and shall also reject the name `.`,
+names starting or ending with whitespace, names ending with `.` (document and chapter names only), and Windows'
+reserved device names (CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9). (Addendum A-7.)
+- FR-1.8.9: Name uniqueness (FR-1.8.6) is case-sensitive: names differing only in case are distinct to SB. Because
+they may collide on a case-insensitive file system, SB shall never silently overwrite an existing file: if saving a
+song (`songs add`, or `songs modify` changing its title or chapter) would overwrite a file that is not that song's
+own, the command shall fail with a Conflict error naming the file and change nothing. (Addendum A-7.)
 
 ### 1.9 CLI — `documents`
 
 - FR-1.9.1: `documents create` shall create an empty document and its repository, accepting `name` (required), 
 `title` (required), `subtitle`, and `output folder`.
 - FR-1.9.2: `documents list` shall list documents created with the tool, optionally including chapters and/or songs 
-(`-c`, `-s`; both together lists songs grouped under chapters).
+(`-c`, `-s`; both together lists songs grouped under chapters; `-s` alone lists each document's songs directly 
+under the document, in number order).
 - FR-1.9.3: `documents delete` shall delete a document's repository, given a required document name, cascading to its 
 chapters and songs (FR-1.8.5), with an optional `--force`/`-f` flag to skip the cascade confirmation prompt.
 - FR-1.9.4: `documents rename` shall rename a document and its repository, given a required current name and new name.
 - FR-1.9.5: `documents build` shall build the final document by calculating song placement, given a required document 
 name, and optional ordering mode (number-wise or space-efficiency) and format (single-column or multi-column). For 
-space-efficient ordering, per-page placement follows FR-1.3.8–FR-1.3.14 (FFD fast path, then exact subset-sum search, 
-against the 95% fill target); once that target is met for a page, calculation for that page stops and moves on to 
-the next page.
+space-efficient ordering, per-page placement follows FR-1.3.8–FR-1.3.18 (FFD fast path, then exact subset-sum search 
+at several capacities, every candidate set scored by simulating its real placement, against the 95% fill target); 
+once that target is met for a page, calculation for that page stops and moves on to the next page. Ordering mode is 
+given as `as-listed` (number-wise, FR-1.3.2) or `space-efficient`; a single-column build always uses `as-listed`, 
+since LaTeX flows the text itself and there is no column space to optimise.
 - FR-1.9.6: `documents build` shall write LaTeX source only (the main document and its chapter `.tex` files) to the 
 output folder. It shall not itself invoke a LaTeX engine (e.g. `pdflatex`/`xelatex`) to produce a compiled PDF.
 
@@ -176,7 +208,8 @@ next sequential number (FR-1.4.3); if given an existing position, later songs sh
 - FR-1.11.2: `songs delete` shall delete a song, given a required document name and required song title.
 - FR-1.11.3: `songs list` shall list songs, given a required document name and optional chapter name filter.
 - FR-1.11.4: `songs modify` shall update one or more of a song's title, writer, melody, chapter, or number, 
-given a required document name and song title.
+given a required document name and song title. An empty value for the writer or melody removes it (so it is no 
+longer shown and is left out of the `.yml`); an empty value for `songs add` is the same as omitting it. (Addendum A-10.)
 
 ### 1.12 LaTeX document template
 
@@ -187,8 +220,9 @@ given a required document name and song title.
 - FR-1.12.4: The generated document's page size shall be A4, with margins and other page metrics as defined in 
 `PageMetrics.png`.
 - FR-1.12.5: Chapters shall be emitted as unnumbered LaTeX chapters, using `\chapter*{{name}}` rather than `\chapter{{name}}` — the outer braces are LaTeX's own command-argument delimiters, and the inner `{name}` is the substitution placeholder for the chapter's display title.
-- FR-1.12.6: Each song shall be rendered inside a minipage acting as a column.
-- FR-1.12.7: Every song shall have at least a title, emitted as a LaTeX `\paragraph*{{name}}` command — again, the outer braces are LaTeX's delimiters and `{name}` is the placeholder for the song's title.
+- FR-1.12.6: Each page's two columns shall each be a minipage; the songs (or song fragments) placed in a column are 
+rendered inside its minipage.
+- FR-1.12.7: Every song shall have at least a title, emitted as a LaTeX `\paragraph*{{name}}` command — again, the outer braces are LaTeX's delimiters and `{name}` is the placeholder for the song's title. The placeholder is filled with the song's number and title, `N. Title` (FR-1.12.15), and the command is followed by a line break (FR-1.12.11).
 - FR-1.12.8: A song's text shall be inserted as free text directly beneath its header (the title line and, when 
 present, the melody and writer lines; FR-1.12.11–FR-1.12.13).
 - FR-1.12.9: SB shall not hard-code or assume a particular LaTeX engine in the generated source. Correct rendering of 
@@ -201,7 +235,7 @@ an earlier page, SB shall insert a corresponding marker (also `(forts.)`) at its
 (FR-1.3.16).
 - FR-1.12.11: A song's title shall be rendered on its own line, separate from the first line of the lyrics. Since 
 `\paragraph*` is a run-in heading, the emitted title shall be followed by an explicit line break 
-(`\paragraph*{{name}}\mbox{}\\`). (Bugfix A-1, see `addendums.md`.)
+(`\paragraph*{{N. name}}\mbox{}\\`, with the number prefix of FR-1.12.15). (Bugfix A-1, see `addendums.md`.)
 - FR-1.12.12: When a song has a melody, it shall be rendered on its own line directly below the title, prefixed by 
 `Mel: `.
 - FR-1.12.13: When a song has a writer, it shall be rendered on its own line directly below the title (and below the 
@@ -210,6 +244,11 @@ melody line, if any), prefixed by `Text: `. Songs without a melody and/or writer
 towards a song fragment's height (FR-1.3, §2.2 ordering) and the line budget when a song is split across
 columns/pages, so that the planned layout matches what is rendered. A continuation fragment re-renders no header
 lines; it has a leading notice line, and a trailing one if it breaks off again. (Addendum A-5.)
+- FR-1.12.16: In single-column mode, where LaTeX decides the page breaks, SB shall not allow a page break between a 
+song's header and the start of its lyrics: the header lines and the song's first paragraph (FR-1.3.17), up to 10 lyric 
+lines, are joined with non-breaking line ends (`\\*`), so a title is never left alone at the bottom of a page. The 
+limit keeps a very long first paragraph from producing a page that cannot fit. Multi-column output is unaffected. 
+(Addendum A-11.)
 - FR-1.12.15: The title line shall be prefixed with the song's number followed by a period and a space, e.g. `1. Title`. The number is the song's number in its document (§2.3). (Addendum A-4.)
 
 ## 2 Non-functional requirements (quality attributes)
@@ -230,7 +269,12 @@ consuming the same core, without modifying core logic.
 - NFR-2.2.2 (Front-end-agnostic result contract): The core shall report success/failure via a structured result (or 
 typed exceptions), not via anything CLI-specific (writing directly to stdout/stderr, calling `Environment.Exit`, 
 etc.). The CLI front-end shall translate that structured result into process exit codes and console output; a future 
-GUI/API front-end would translate the same result differently without changes to the core.
+GUI/API front-end would translate the same result differently without changes to the core. Environmental failures 
+that occur outside any command (an unusable data folder, a locked or corrupt database) shall be reported the same way, 
+as a Storage error with a message and exit code, rather than as an unhandled exception. (Addendum A-8.) The exit 
+codes are: 0 success, 1 validation error (including invalid command-line arguments), 2 conflict, 3 not found, 4 
+storage. The database lives in `%APPDATA%\sb-cli\sb.db` unless the environment variable `SB_DATA_DIR` names another 
+folder to hold it.
 - NFR-2.2.3 (Testability / TDD): The codebase shall be developed test-first — a failing NUnit test shall exist before a 
 feature is implemented, with tests located under `/Tests`.
 - NFR-2.2.4 (Test coverage): After implementing a feature, both additional passing and failing (edge-case) tests shall 
@@ -278,7 +322,9 @@ database, so that a partial failure never leaves the two sources of truth diverg
 ### 2.6 Performance efficiency (end user)
 
 - NFR-2.6.1 (Space-efficiency algorithmic complexity): The space-efficient layout algorithm shall aim to fill 95% of 
-remaining page space per page without altering song content. Per-page song selection shall run in pseudo-polynomial 
-time — an `O(n log n)` First-Fit-Decreasing pass followed, if needed, by an `O(songs × capacity)` subset-sum/bounded-
-knapsack dynamic program over quantized line-height units — rather than enumerating permutations (`O(n!)`), so that 
-build time stays tractable for realistic song counts without needing a tunable search-size limit.
+page space per page without altering song content. Per-page song selection shall run in pseudo-polynomial 
+time — an `O(n log n)` First-Fit-Decreasing pass followed, if needed, by `O(songs × capacity)` subset-sum/bounded-
+knapsack dynamic programs over quantized line-height units — rather than enumerating permutations (`O(n!)`), so that 
+build time stays tractable for realistic song counts without needing a tunable search-size limit. Since FR-1.3.18 
+each candidate set is also placed once to measure it; the number of candidates is bounded (at most one subset-sum 
+run per line of a column's capacity, times three orderings), so the pseudo-polynomial bound still holds.

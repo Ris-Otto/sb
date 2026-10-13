@@ -3,14 +3,16 @@ using System.Text;
 namespace Sb.Core.LaTeX;
 
 /// <summary>
-/// Renders a chapter's songs to LaTeX (FR-1.12.5–FR-1.12.10). Two independent rendering paths
-/// mirror the two layout modes from earlier milestones:
+/// Renders a chapter's songs to LaTeX (FR-1.12.5–FR-1.12.15): each song as a header (the
+/// <c>N. Title</c> line, then <c>Mel:</c>/<c>Text:</c> lines when present) followed by its lyrics.
+/// Two independent rendering paths mirror the two layout modes:
 ///
 /// <see cref="RenderMultiColumn"/> consumes the <see cref="Page"/>/<see cref="SongFragment"/> data
-/// Milestone 5 already computed — each fragment's line count was decided there, so wrapping here
-/// must reuse the same <c>columnWidth</c> budget (via <see cref="LineWrapper"/>) rather than
-/// trusting LaTeX's own text flow, or the rendered output could overflow the minipage it was
-/// planned to fit. Continuation notices (FR-1.3.16) come straight from the fragment's
+/// the paginators already computed — each fragment's line count (including its header and
+/// <c>(forts.)</c> notice lines) was decided there, so wrapping here must reuse the same
+/// <c>columnWidth</c> budget (via <see cref="LineWrapper"/>) rather than trusting LaTeX's own text
+/// flow, or the rendered output could overflow the minipage it was planned to fit. Continuation
+/// notices (FR-1.3.16) come straight from the fragment's
 /// <see cref="SongFragment.ContinuesOnNextPage"/>/<see cref="SongFragment.ContinuesFromPreviousPage"/>
 /// flags.
 ///
@@ -22,6 +24,10 @@ namespace Sb.Core.LaTeX;
 public static class ChapterEmitter
 {
     private const string MinipageWidth = "0.48\\textwidth";
+
+    /// <summary>In single-column mode, at most this many lyric lines are kept on the same page as the
+    /// song's header.</summary>
+    private const int MaxLyricLinesKeptWithHeader = 10;
 
     public static string RenderMultiColumn(string chapterTitle, IReadOnlyList<Page> pages, int columnWidth)
     {
@@ -60,9 +66,20 @@ public static class ChapterEmitter
 
         foreach (Song song in songs)
         {
-            AppendHeader(sb, song);
-            foreach (string line in song.Text)
-                sb.AppendLine($"{LaTeXText.Escape(line)}\\\\");
+            // LaTeX decides where pages break here, so SB can't plan around it as it does in multi-column
+            // mode. What it can do is forbid a break between the song's header and its first paragraph
+            // (`\\*` is a line break that doesn't allow a page break after it), so a title is never left
+            // alone at the bottom of a page. The kept-together part is capped, so a very long first
+            // paragraph can't produce a page that doesn't fit.
+            int firstParagraph = song.Text.TakeWhile(line => !string.IsNullOrWhiteSpace(line)).Count();
+            int lyricLinesKept = Math.Clamp(firstParagraph, 1, MaxLyricLinesKeptWithHeader);
+
+            List<string> lines = HeaderLatex(song).ToList();
+            lines.AddRange(song.Text.Select(LaTeXText.Escape));
+            int keptTogether = lines.Count - song.Text.Count + Math.Min(lyricLinesKept, song.Text.Count);
+
+            for (int i = 0; i < lines.Count; i++)
+                sb.AppendLine(lines[i] + (i < keptTogether - 1 ? "\\\\*" : "\\\\"));
         }
 
         return sb.ToString();
@@ -72,11 +89,19 @@ public static class ChapterEmitter
     // lyric line would follow the title on the same line. Melody and writer get their own lines.
     private static void AppendHeader(StringBuilder sb, Song song)
     {
-        sb.AppendLine($"\\paragraph*{{{song.Number}. {LaTeXText.Escape(song.Title)}}}\\mbox{{}}\\\\");
+        foreach (string line in HeaderLatex(song))
+            sb.AppendLine(line + "\\\\");
+    }
+
+    /// <summary>The header's lines, without their line-break terminators: <c>N. Title</c>, then the
+    /// <c>Mel:</c>/<c>Text:</c> lines when present (FR-1.12.7, FR-1.12.11–15).</summary>
+    private static IEnumerable<string> HeaderLatex(Song song)
+    {
+        yield return $"\\paragraph*{{{song.Number}. {LaTeXText.Escape(song.Title)}}}\\mbox{{}}";
         if (!string.IsNullOrWhiteSpace(song.Melody))
-            sb.AppendLine($"Mel: {LaTeXText.Escape(song.Melody)}\\\\");
+            yield return $"Mel: {LaTeXText.Escape(song.Melody)}";
         if (!string.IsNullOrWhiteSpace(song.Writer))
-            sb.AppendLine($"Text: {LaTeXText.Escape(song.Writer)}\\\\");
+            yield return $"Text: {LaTeXText.Escape(song.Writer)}";
     }
 
     private static void AppendFragment(StringBuilder sb, SongFragment fragment, int columnWidth)

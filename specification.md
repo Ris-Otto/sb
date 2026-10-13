@@ -29,6 +29,11 @@ by adding `\vspace` to the end of the shorter column, so both columns also *end*
 vertical alignment is a finishing touch for a level-looking page, not the primary mechanism for
 using available space.
 
+Single-column formatting leaves the page breaks to LaTeX, which SB cannot see, so it cannot plan pages, add
+continuation notices or apply the paragraph rule there. What it does do is keep each song's header together with the
+start of its lyrics: the header lines and the first paragraph (at most 10 lyric lines) are joined with LaTeX's
+non-breaking line end `\\*`, so a title is never stranded alone at the bottom of a page (A-11).
+
 SB does not try to detect musical phrasing. The user's own line breaks are trusted as-is: one
 input line becomes one output line. The only exception is a line too wide for the column
 (especially likely in multi-column leaflets, since space is limited), which is broken across
@@ -50,7 +55,8 @@ Whenever a song's content is split across a page boundary — whether because of
 because the song itself spans multiple pages — a continuation notice must be shown to the reader (e.g. a short
 marker where the song breaks off, and another where it resumes), so the break doesn't read as the song simply
 ending partway through. A song splitting from column 1 to column 2 within the same page needs no such notice,
-since both halves are visible on the same page at once.
+since both halves are visible on the same page at once. (Single-column mode, §2.1, has no such notices: LaTeX
+decides there where pages break, which SB cannot see.)
 
 Two ways to order the songs:
  - As listed by the user
@@ -72,12 +78,13 @@ problem, not a permutation search:
 
 - Each song's height is quantized to whole output lines (the same unit used for line-wrapping, §2.1).
 - The remaining songs are run through a First-Fit-Decreasing (FFD) greedy pass first: sorted longest-first, added
-  to the page while they still fit. If this already fills 95% of the remaining space, it is used as-is.
+  to the page while they still fit. If the page this actually produces already fills 95% of its two columns, it is
+  used as-is.
 - Otherwise, an exact subset-sum/bounded-knapsack search is run over the remaining songs against the page's
   remaining capacity (in lines), to find the subset whose total height best fills that capacity, subject to the
   two caveats.
 
-The best-fit result aims to fill 95% of the remaining space on the page. Because this finds the best subset
+The best-fit result aims to fill 95% of the page's two columns, measured in lines actually placed. Because this finds the best subset
 directly, there is no permutation count to bound or tune, and no separate fallback algorithm is needed for an
 exhausted search — if the remaining songs genuinely cannot reach 95% (e.g. too few songs are left in the chapter),
 the best achievable fill for that page is used.
@@ -99,6 +106,10 @@ Numbers stay contiguous automatically: deleting a song shifts every later song's
 moving a song to an explicit position shifts every song from that position onward up by one. A song's number is
 therefore always its current sequential position, not an independently stable identifier.
 
+The numbering is document-wide: it runs through all chapters of the document in one sequence (a song's chapter does
+not affect its number), so renumbering touches songs in every chapter, and a chapter holds a range of the numbers that
+need not start at 1. Moving a song to another chapter keeps its number unless a new one is given (A-6).
+
 ### 2.4 Storage
 
 #### 2.4.1 Documents and chapters
@@ -110,30 +121,39 @@ Songs are stored in the chapter folder. Documents and chapters are stored as .te
 The songs are stored as .yml-files, which are then later parsed when `sb documents build` is called.
 The .yml for a song looks like this:
 ```
-- title: {--title}
-- writer: {--writer}
-- melody: {--melody}
-- number: {--number}
-- text:
+title: {--title}
+writer: {--writer}
+melody: {--melody}
+number: {--number}
+text:
   - {line 1}
   - ...
   - {line N}
 ```
+It is a plain YAML mapping. `writer` and `melody` are left out when the song has none. SB writes every scalar
+double-quoted, so that a lyric line that looks like a YAML literal (`null`, `true`, `42`, an empty line) is read back
+as text and never reinterpreted; hand-written files may use plain scalars.
 
 The document and chapter the song belongs to is inferred, since the songs is stored inside the chapter-folder
 it belongs to, which in turn is stored inside the document-folder the chapter belongs to.
 
-#### 2.4.3
+#### 2.4.3 Database
 Since files and folders may be saved wherever the user wants, the database should be the source of truth for fast lookup.
-If a file or folder isn't where the database says it is, inform user about the mismatch. The database should contain:
-"documents": path to the maindocument folder, document filename, internal id.
-"chapters": chapter name, document id, internal id.                                                                     
+If a file or folder isn't where the database says it is, inform user about the mismatch: the `list` commands mark
+anything missing with its expected path (`[NOT FOUND on disk: <path>]`, exit code still 0), and the commands that
+need a document's or chapter's folder (`build`, `rename`, `chapters add`, `songs add`, `songs modify`) stop with a
+Storage error naming it instead of recreating it or failing obscurely (A-10). The database should contain:
+"documents": path to the maindocument folder, document filename, display title, display subtitle, internal id.
+"chapters": chapter name, display title, document id, internal id.
 "songs": song title, song number, chapter id, internal id
 
 Mismatches of this kind are only expected to arise from changes made outside of SB. Any structural operation SB
 itself performs (`create`, `add`, `rename`, `delete`, ...) must update the filesystem and the database together as
 a single atomic step: if either half fails, the whole operation is rolled back so no orphaned file/folder or
-dangling database row is left behind as a direct result of SB's own actions.
+dangling database row is left behind as a direct result of SB's own actions. For songs this includes the renumbering
+of other songs: the files involved are rewritten with an undo and all database rows change in one transaction, so a
+failure part-way leaves every file and number as it was. The only exception is removing a deleted song's own file,
+which happens after the database change has committed and is reported if it fails (A-8).
 
 
 
@@ -156,12 +176,23 @@ Names (document/chapter/song) must be unique within their scope (a document's na
 chapter's name within its document, a song's title within its chapter). `create`/`add`/`rename` must reject a name
 that already exists in that scope with a clear error, rather than silently disambiguating or allowing the duplicate.
 
+Uniqueness is case-sensitive: "Hymn" and "hymn" are different names to SB (A-7). On a case-insensitive file system
+(the Windows default) two such names map to the same file, so SB checks before saving a song: if writing its file
+would overwrite an existing file (another song whose title differs only in case, or a stray file), the command fails
+with a clear Conflict error naming the file and changes nothing. A song whose title only changes case keeps its own
+file. Document and chapter folders are likewise never overwritten.
+
 Any command that references a document/chapter name or song title which does not exist must fail with a clear error
 naming what wasn't found, rather than failing silently or no-op'ing.
 
 Since document/chapter names and song titles are used directly as folder/file names on disk, `create`/`add`/`rename`
 must validate names against a safe character set and reject (with a clear error) any name containing path
-separators, `..` segments, or other filesystem-illegal characters, rather than silently sanitizing them.
+separators, `..` segments, or other filesystem-illegal characters, rather than silently sanitizing them. The check is
+a platform-independent superset of what Windows rejects, so that a name accepted on one platform works on all (§5.3).
+In addition to the above, a name is rejected if it is exactly `.`, starts or ends with whitespace, ends with a `.`
+(document and chapter names only — a song title is a file name stem, where a trailing dot is harmless), or is one of
+Windows' reserved device names (CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9, in any case and with or without an
+extension after the first dot), which cannot be created as files or folders there (A-7).
 
 The following list describes the interface. The fields marked 'Required' should be command arguments, the others
 flags
@@ -178,7 +209,18 @@ flags
 5. A user can `delete` a song from a chapter, and a chapter from a document
 
 CLI arguments like 'document-name' or 'chapter name' are inferred if working directory is a
-document/chapter directory.
+document/chapter directory. This holds for every command that takes a document name, and for the chapter name of
+`songs add`; leading arguments that are left out are the ones inferred (so `songs add Title Text` run inside a chapter
+folder adds to that chapter, and `songs add chapter-1 Title Text` run inside a document folder adds to that
+document's `chapter-1`). A name given explicitly always wins (A-8).
+
+Failures that happen outside any one command — for instance an unusable data folder or a locked database — are
+reported like other storage errors, with an `Error:` message and the Storage exit code, not as a crash (A-8).
+
+Exit codes: 0 success, 1 validation error (also invalid command-line arguments), 2 conflict (a name already exists,
+or a file would be overwritten), 3 not found, 4 storage (file system or database). The database is kept in
+`%APPDATA%\sb-cli\sb.db`; the environment variable `SB_DATA_DIR` selects another folder for it, which allows several
+independent sets of documents.
 
 #### 2.5.1 `documents`
 
@@ -208,6 +250,7 @@ flags or arguments (`list`):
 - chapters === list chapters
 - songs === list songs
 - when both -c and -s are true, list songs under chapters
+- when only -s is true, list each document's songs directly under the document, in number order (A-8)
 
 flags or args (`delete`):
 
@@ -271,8 +314,9 @@ flags or arguments (`add`):
 - writer === the name of the writer of the song text. Visible in the LaTeX output
 - text === the text of the song. Required. May be given as literal text, or as a path to an
   existing file, whose contents are then used as the song's text.
-- number === the song's position/number in the chapter. If omitted, the song is assigned the next
-  sequential number. If given an existing position, the songs from that position onward shift up by one (§2.3).
+- number === the song's number: its position in the whole document (across all chapters, §2.3). If omitted, the song
+  is assigned the next sequential number in the document (for `modify`: unchanged, also when moving to another
+  chapter). If given an existing position, the songs from that position onward, in any chapter, shift up by one (§2.3).
 
 flags or arguments (`delete`):
 
@@ -294,6 +338,9 @@ flags or arguments (`modify`):
     - melody
     - chapter
     - number
+
+An empty value for writer or melody (`--writer ""`) removes it from the song; it is then not printed and is left out
+of the song's `.yml`. The same empty value given to `add` just means "none" (A-10).
 
 ## 3 Testing
 
@@ -319,13 +366,13 @@ Chapters can be defined in two ways in LaTeX: `\chapter{{name}}` or
 `\chapter*{{name}}`. We use the latter in SB.
 
 ### 4.3 Songs
-Songs are contained in minipages, which act like columns.
-Each song has atleast a title, and that title is a LaTeX 
-`\paragraph*{{name}}`. The text of the song is then inserted under
-the title as free text.
+A page's two columns are minipages; the songs (or song fragments) placed in a column are rendered inside its
+minipage.
+Each song has at least a title, and that title is a LaTeX `\paragraph*{{name}}`, where `name` is the song's number
+and title, `N. Title` (A-4). The text of the song is then inserted under the header as free text.
 
 Because `\paragraph*` is a run-in heading (the following text would start on the same line), the title is
-emitted as `\paragraph*{{name}}\mbox{}\\` so that it occupies a line of its own. The song's header consists of
+emitted as `\paragraph*{{N. Title}}\mbox{}\\` so that it occupies a line of its own. The song's header consists of
 separate lines, in this order, all above the lyrics:
 
 1. the title, prefixed with the song's number: `1. Title` (A-4)

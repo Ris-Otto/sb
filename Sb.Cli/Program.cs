@@ -1,5 +1,7 @@
 using System.CommandLine;
 using System.Text;
+using Microsoft.Data.Sqlite;
+using Sb.Core;
 using Sb.Core.Documents;
 using Sb.Core.Storage;
 
@@ -20,6 +22,22 @@ public class Program
         {
         }
 
+        // Environmental failures outside any command (an unusable SB_DATA_DIR, a locked or corrupt
+        // database, ...) are reported like any other storage error (NFR-2.2.2) rather than crashing
+        // with an unhandled exception. Genuine bugs still surface as exceptions.
+        try
+        {
+            return Run(args);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SqliteException)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return ExitCodes.ForError(ErrorKind.Storage);
+        }
+    }
+
+    private static int Run(string[] args)
+    {
         // SB_DATA_DIR overrides where the database lives — lets a user keep more than one separate sb
         // database, and lets tests exercise the real CLI executable without touching the real one.
         string appDataFolder = Environment.GetEnvironmentVariable("SB_DATA_DIR") ??

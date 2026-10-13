@@ -20,7 +20,7 @@ public sealed class Song
     public static Result<Song> Create(
         string title, IReadOnlyList<string> text, int number, string? writer = null, string? melody = null)
     {
-        Result titleValidity = NameValidator.Validate(title);
+        Result titleValidity = NameValidator.Validate(title, allowTrailingDot: true);
         if (titleValidity.IsFailure)
             return Result<Song>.Failure(titleValidity.Error!);
         if (text is null || text.Count == 0)

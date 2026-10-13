@@ -31,4 +31,9 @@ public static class CommandReporting
         parseResult.InvocationConfiguration.Error.WriteLine($"Error: {error.Message}");
         return ExitCodes.ForError(error.Kind);
     }
+
+    /// <summary>The marker appended to a listing line for something the database expects on disk but that is
+    /// missing there (FR-1.7.5): the user is told about the mismatch rather than left to find out later.</summary>
+    public static string MissingNote(string? missingAt) =>
+        missingAt is null ? "" : $"  [NOT FOUND on disk: {missingAt}]";
 }

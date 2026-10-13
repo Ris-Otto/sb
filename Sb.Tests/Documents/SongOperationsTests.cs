@@ -68,7 +68,7 @@ public class SongOperationsTests
     }
 
     [Test]
-    public void Add_NumberOmitted_AssignsMaxPlusOne()
+    public void Add_NumberOmitted_AssignsNextSequentialNumber()
     {
         _songs.Add("my-doc", "chapter-1", "First", "x", null, null, null);
 
@@ -224,8 +224,59 @@ public class SongOperationsTests
         Assert.That(new SongsRepository(_db).GetByTitle(destChapterId, "Lille Albin").IsSuccess, Is.True);
     }
 
+    // Song numbers run through the whole document, across its chapters (FR-1.4.1, A-6).
+    private int NumberOf(string chapterName, string title)
+    {
+        long documentId = new DocumentsRepository(_db).GetByFilename("my-doc").Value.Id;
+        long chapterId = new ChaptersRepository(_db).GetByName(documentId, chapterName).Value.Id;
+        return new SongsRepository(_db).GetByTitle(chapterId, title).Value.Number;
+    }
+
     [Test]
-    public void Modify_ChapterMove_RenumbersBothSourceAndDestination()
+    public void Add_NumberOmitted_ContinuesTheDocumentNumberingAcrossChapters()
+    {
+        _chapters.Add("my-doc", "chapter-2", null);
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "B", "x", null, null, null);
+
+        var result = _songs.Add("my-doc", "chapter-2", "C", "x", null, null, null);
+
+        Assert.That(result.Value.Number, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Add_ExplicitNumber_ShiftsSongsInOtherChaptersToo()
+    {
+        _chapters.Add("my-doc", "chapter-2", null);
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-2", "B", "x", null, null, null);
+
+        _songs.Add("my-doc", "chapter-1", "New", "x", null, null, 1);
+
+        Assert.That(NumberOf("chapter-1", "New"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "A"), Is.EqualTo(2));
+        Assert.That(NumberOf("chapter-2", "B"), Is.EqualTo(3));
+        string destFile = Path.Combine(_outputFolder, "my-doc", "Chapters", "chapter-2", "B.yml");
+        Assert.That(SongYamlSerializer.Deserialize(File.ReadAllText(destFile)).Value.Number, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Delete_ShiftsLaterSongsInOtherChaptersDown()
+    {
+        _chapters.Add("my-doc", "chapter-2", null);
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-2", "B", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "C", "x", null, null, null);
+
+        var result = _songs.Delete("my-doc", "A");
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(NumberOf("chapter-2", "B"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "C"), Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Modify_ChapterMove_KeepsTheSongsDocumentNumber()
     {
         _chapters.Add("my-doc", "chapter-2", null);
         _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
@@ -235,13 +286,176 @@ public class SongOperationsTests
         var result = _songs.Modify("my-doc", "A", null, null, null, newChapterName: "chapter-2", newNumber: null);
 
         Assert.That(result.IsSuccess, Is.True);
+        Assert.That(NumberOf("chapter-2", "A"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "B"), Is.EqualTo(2));
+        Assert.That(NumberOf("chapter-2", "C"), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Modify_NumberAcrossChapters_RenumbersTheWholeDocument()
+    {
+        _chapters.Add("my-doc", "chapter-2", null);
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-2", "B", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "C", "x", null, null, null);
+
+        var result = _songs.Modify("my-doc", "C", null, null, null, newChapterName: "chapter-2", newNumber: 1);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(NumberOf("chapter-2", "C"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "A"), Is.EqualTo(2));
+        Assert.That(NumberOf("chapter-2", "B"), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Add_WouldOverwriteExistingFile_ReturnsConflict_LeavesFileUntouched()
+    {
+        string stray = Path.Combine(ChapterFolder, "Taken.yml");
+        File.WriteAllText(stray, "not a song of ours");
+
+        var result = _songs.Add("my-doc", "chapter-1", "Taken", "x", null, null, null);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Conflict));
+        Assert.That(result.Error.Message, Does.Contain("overwrite"));
+        Assert.That(File.ReadAllText(stray), Is.EqualTo("not a song of ours"));
         long documentId = new DocumentsRepository(_db).GetByFilename("my-doc").Value.Id;
-        long sourceId = new ChaptersRepository(_db).GetByName(documentId, "chapter-1").Value.Id;
-        long destId = new ChaptersRepository(_db).GetByName(documentId, "chapter-2").Value.Id;
-        var repo = new SongsRepository(_db);
-        Assert.That(repo.GetByTitle(sourceId, "B").Value.Number, Is.EqualTo(1), "B should close the gap A left behind");
-        Assert.That(repo.GetByTitle(destId, "C").Value.Number, Is.EqualTo(1));
-        Assert.That(repo.GetByTitle(destId, "A").Value.Number, Is.EqualTo(2), "A appends after C by default");
+        long chapterId = new ChaptersRepository(_db).GetByName(documentId, "chapter-1").Value.Id;
+        Assert.That(new SongsRepository(_db).GetByTitle(chapterId, "Taken").IsFailure, Is.True, "no DB row either");
+    }
+
+    [Test]
+    public void Add_TitleDifferingOnlyInCase_OnCaseInsensitiveFileSystem_ReturnsConflict()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+            Assert.Ignore("Only applies where file names are not case-sensitive.");
+        _songs.Add("my-doc", "chapter-1", "Hymn", "original", null, null, null);
+
+        var result = _songs.Add("my-doc", "chapter-1", "hymn", "other", null, null, null);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Conflict));
+        Assert.That(File.ReadAllText(Path.Combine(ChapterFolder, "Hymn.yml")), Does.Contain("original"));
+    }
+
+    [Test]
+    public void Modify_RenameOntoExistingFile_ReturnsConflict_ChangesNothing()
+    {
+        _songs.Add("my-doc", "chapter-1", "Mine", "x", null, null, null);
+        string stray = Path.Combine(ChapterFolder, "Taken.yml");
+        File.WriteAllText(stray, "not a song of ours");
+
+        var result = _songs.Modify("my-doc", "Mine", newTitle: "Taken", null, null, null, null);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Conflict));
+        Assert.That(File.ReadAllText(stray), Is.EqualTo("not a song of ours"));
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Mine.yml")), Is.True);
+    }
+
+    [Test]
+    public void Modify_ChangeOnlyTheCaseOfTheTitle_KeepsTheSongsFile()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+            Assert.Ignore("Only applies where file names are not case-sensitive.");
+        _songs.Add("my-doc", "chapter-1", "hymn", "text", null, null, null);
+
+        var result = _songs.Modify("my-doc", "hymn", newTitle: "Hymn", null, null, null, null);
+
+        Assert.That(result.IsSuccess, Is.True);
+        string path = Path.Combine(ChapterFolder, "Hymn.yml");
+        Assert.That(File.Exists(path), Is.True, "the file must not be deleted by the rename");
+        Assert.That(SongYamlSerializer.Deserialize(File.ReadAllText(path)).Value.Title, Is.EqualTo("Hymn"));
+    }
+
+    // --- renumbering is all-or-nothing (FR-1.7.6, FR-1.4.3, A-8) ---
+
+    private void WithReadOnlyFile(string path, Action test)
+    {
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            test();
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+    }
+
+    private int NumberInFile(string title) =>
+        SongYamlSerializer.Deserialize(File.ReadAllText(Path.Combine(ChapterFolder, title + ".yml"))).Value.Number;
+
+    [Test]
+    public void Add_FailureWhileShiftingAnotherSong_RollsEverythingBack()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Ignore("Relies on a read-only file being unwritable, which doesn't hold for root on Unix.");
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "B", "x", null, null, null);
+
+        WithReadOnlyFile(Path.Combine(ChapterFolder, "B.yml"), () =>
+        {
+            var result = _songs.Add("my-doc", "chapter-1", "New", "x", null, null, 1);
+
+            Assert.That(result.IsFailure, Is.True);
+            Assert.That(result.Error!.Kind, Is.EqualTo(ErrorKind.Storage));
+        });
+
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "New.yml")), Is.False, "new song's file removed");
+        Assert.That(NumberInFile("A"), Is.EqualTo(1), "A's file restored");
+        Assert.That(NumberInFile("B"), Is.EqualTo(2));
+        Assert.That(NumberOf("chapter-1", "A"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "B"), Is.EqualTo(2));
+        long documentId = new DocumentsRepository(_db).GetByFilename("my-doc").Value.Id;
+        long chapterId = new ChaptersRepository(_db).GetByName(documentId, "chapter-1").Value.Id;
+        Assert.That(new SongsRepository(_db).GetByTitle(chapterId, "New").IsFailure, Is.True, "no DB row for the new song");
+    }
+
+    [Test]
+    public void Delete_FailureWhileShiftingAnotherSong_DeletesNothing()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Ignore("Relies on a read-only file being unwritable, which doesn't hold for root on Unix.");
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "B", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "C", "x", null, null, null);
+
+        WithReadOnlyFile(Path.Combine(ChapterFolder, "C.yml"), () =>
+        {
+            var result = _songs.Delete("my-doc", "A");
+
+            Assert.That(result.IsFailure, Is.True);
+        });
+
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "A.yml")), Is.True, "A is still there");
+        Assert.That(NumberOf("chapter-1", "A"), Is.EqualTo(1));
+        Assert.That(NumberOf("chapter-1", "B"), Is.EqualTo(2));
+        Assert.That(NumberInFile("B"), Is.EqualTo(2), "B's file restored");
+        Assert.That(NumberOf("chapter-1", "C"), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Modify_FailureWhileShiftingAnotherSong_ChangesNothing()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Ignore("Relies on a read-only file being unwritable, which doesn't hold for root on Unix.");
+        _songs.Add("my-doc", "chapter-1", "A", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "B", "x", null, null, null);
+        _songs.Add("my-doc", "chapter-1", "C", "x", null, null, null);
+
+        WithReadOnlyFile(Path.Combine(ChapterFolder, "B.yml"), () =>
+        {
+            var result = _songs.Modify("my-doc", "C", newTitle: "Renamed", null, null, null, newNumber: 1);
+
+            Assert.That(result.IsFailure, Is.True);
+        });
+
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "C.yml")), Is.True, "C keeps its file");
+        Assert.That(File.Exists(Path.Combine(ChapterFolder, "Renamed.yml")), Is.False);
+        Assert.That(NumberOf("chapter-1", "C"), Is.EqualTo(3));
+        Assert.That(NumberOf("chapter-1", "A"), Is.EqualTo(1));
+        Assert.That(NumberInFile("A"), Is.EqualTo(1));
     }
 
     [Test]

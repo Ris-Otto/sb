@@ -4,7 +4,7 @@ namespace Sb.Core;
 /// Computes the on-disk paths for a document's folder structure (FR-1.5.1–FR-1.5.4): a document is
 /// its own folder containing a main `.tex` file and a `Chapters` subfolder, each chapter is its own
 /// subfolder there containing a `.tex` file and the chapter's songs as `.yml` files. Centralized here
-/// since Milestones 7–9 all need to agree on the same layout.
+/// since the document, chapter and song operations all need to agree on the same layout.
 /// </summary>
 public static class DocumentLayout
 {

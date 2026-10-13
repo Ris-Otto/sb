@@ -131,6 +131,35 @@ public class DocumentsCommandsTests
     }
 
     [Test]
+    public void List_DocumentFolderMissingOnDisk_FlagsTheMismatch()
+    {
+        Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
+        Directory.Delete(Path.Combine(_outputFolder, "my-doc"), recursive: true);
+
+        int exitCode = Run("documents", "list");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success), "listing is informational, not an error");
+        Assert.That(_output.ToString(), Does.Contain("my-doc").And.Contain("NOT FOUND on disk"));
+    }
+
+    [Test]
+    public void List_WithSongsFlagOnly_ListsSongsDirectlyUnderTheDocument_InNumberOrder()
+    {
+        Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
+        long chapterId = SeedChapter("my-doc");
+        var songs = new SongsRepository(_db);
+        songs.Insert(chapterId, Song.Create("Second", ["x"], 2).Value);
+        songs.Insert(chapterId, Song.Create("First", ["x"], 1).Value);
+
+        int exitCode = Run("documents", "list", "-s");
+
+        Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+        string output = _output.ToString();
+        Assert.That(output, Does.Not.Contain("chapter-1 ("), "chapters were not requested (no chapter heading)");
+        Assert.That(output.IndexOf("1. First", StringComparison.Ordinal), Is.InRange(0, output.IndexOf("2. Second", StringComparison.Ordinal)));
+    }
+
+    [Test]
     public void List_WithChaptersAndSongsFlags_GroupsSongUnderChapter()
     {
         Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
@@ -383,5 +412,48 @@ public class DocumentsCommandsTests
         var chapters = new ChaptersRepository(_db);
         long documentId = documents.GetByFilename(documentName).Value.Id;
         return chapters.Insert(documentId, "chapter-1", "Chapter One").Value;
+    }
+
+    [Test]
+    public void Rename_DocumentNameOmitted_InfersFromWorkingDirectory()
+    {
+        Run("documents", "create", "my-doc", "Title", "-o", _outputFolder);
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(Path.Combine(_outputFolder, "my-doc"));
+        try
+        {
+            int exitCode = Run("documents", "rename", "renamed-doc");
+
+            // On Windows the folder can't be moved while it is this process's own working directory,
+            // which is an operating-system limit; what matters here is that the name was inferred, so
+            // the command got as far as renaming rather than failing validation.
+            Assert.That(_error.ToString(), Does.Not.Contain("No document name"));
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.That(exitCode, Is.EqualTo(ExitCodes.Success));
+                Assert.That(Directory.Exists(Path.Combine(_outputFolder, "renamed-doc")), Is.True);
+            }
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+    }
+
+    [Test]
+    public void Rename_OutsideAnyDocument_WithoutDocumentName_FailsWithValidationError()
+    {
+        string originalCwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(_outputFolder);
+        try
+        {
+            int exitCode = Run("documents", "rename", "renamed-doc");
+
+            Assert.That(exitCode, Is.EqualTo(ExitCodes.ForError(ErrorKind.Validation)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
     }
 }
