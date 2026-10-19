@@ -26,6 +26,20 @@ public class ColumnBalancerTests
         Assert.That(result, Does.Contain("\\hspace{0.075\\textwidth}"));
     }
 
+
+    [Test]
+    public void Fill_ReservesTheHeadingLines_OnTheFirstPageOnly()
+    {
+        // linesPerPage=10, 3 lines reserved => page 1's columns hold 7. An 8-line song no longer
+        // fits page 1's left column whole, so it continues (7 + 1) into the right column; the
+        // next page has the full 10 lines again.
+        var layout = ColumnBalancer.Fill(new[] { Block(8), Block(10) }, SmallPageMetrics(10), startingPageNumber: 1, firstPageReservedLines: 3);
+
+        Assert.That(layout.Pages, Has.Count.EqualTo(2));
+        Assert.That(layout.Pages[0].Left.HeightInLines, Is.EqualTo(7));
+        Assert.That(layout.Pages[0].Right!.HeightInLines, Is.EqualTo(1));
+        Assert.That(layout.Pages[1].Left.HeightInLines, Is.EqualTo(10));
+    }
     [Test]
     public void Fill_StacksMultipleShortSongsIntoTheSameColumn_UntilTheNextOneWouldNotFit()
     {

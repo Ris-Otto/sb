@@ -96,13 +96,11 @@ public static class CliRoot
 
         var buildDocumentNameArgument = new Argument<string>("document-name") { Description = "Document to build." };
         var orderingArgument = new Argument<string>("ordering") { Description = "as-listed or space-efficient.", DefaultValueFactory = _ => "as-listed" };
-        var maxPermutationsOption = new Option<int>("--max-permutations", "-m") { Description = "Bound for the space-efficient exact search.", DefaultValueFactory = _ => 100 };
         var buildFormatOption = new Option<string>("--format", "-f") { Description = "single-column or multi-column.", DefaultValueFactory = _ => "single-column" };
 
         var build = new Command("build", "Build a document's leaflet.");
         build.Arguments.Add(buildDocumentNameArgument);
         build.Arguments.Add(orderingArgument);
-        build.Options.Add(maxPermutationsOption);
         build.Options.Add(buildFormatOption);
         build.SetAction(parseResult =>
         {
@@ -113,7 +111,6 @@ public static class CliRoot
                 detector,
                 parseResult.GetValue(buildDocumentNameArgument)!,
                 ParseOrdering(parseResult.GetValue(orderingArgument)!),
-                parseResult.GetValue(maxPermutationsOption),
                 ParseFormat(parseResult.GetValue(buildFormatOption)!));
             Console.WriteLine($"Built leaflet at {outputPath}");
         });

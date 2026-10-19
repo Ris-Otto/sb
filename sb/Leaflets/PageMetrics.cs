@@ -17,11 +17,15 @@ public sealed class PageMetrics
     /// <summary>The per-column capacity research.md §5's column-fill algorithm packs against.</summary>
     public int LinesPerPage => (int)Math.Floor(UsableHeightPt / BaselineSkipPt);
 
-    public PageMetrics(double paperHeightPt, double topMarginPt, double bottomMarginPt, double baselineSkipPt)
+    /// <summary>Lines at the top of a chapter's first page taken by its `apter*` heading.</summary>
+    public int ChapterHeadingLines { get; }
+
+    public PageMetrics(double paperHeightPt, double topMarginPt, double bottomMarginPt, double baselineSkipPt, int chapterHeadingLines = 0)
     {
         PaperHeightPt = paperHeightPt;
         TopMarginPt = topMarginPt;
         BottomMarginPt = bottomMarginPt;
         BaselineSkipPt = baselineSkipPt;
+        ChapterHeadingLines = chapterHeadingLines;
     }
 }

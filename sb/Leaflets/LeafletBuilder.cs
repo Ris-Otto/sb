@@ -38,7 +38,7 @@ public static class LeafletBuilder
             if (chapter.Songs.Count == 0)
                 continue;
 
-            var orderedSongs = SongOrderer.Order(chapter.Songs, request.Ordering, pageMetrics, request.MaxPermutations);
+            var orderedSongs = SongOrderer.Order(chapter.Songs, request.Ordering, pageMetrics);
             var placedSongs = orderedSongs
                 .Select((song, index) => new PlacedSong(song, index + 1))
                 .ToList();
@@ -48,7 +48,7 @@ public static class LeafletBuilder
             string songContent;
             if (request.Format == LeafletFormat.MultiColumn)
             {
-                var layout = ColumnBalancer.Fill(songBlocks, pageMetrics, currentPageNumber);
+                var layout = ColumnBalancer.Fill(songBlocks, pageMetrics, currentPageNumber, pageMetrics.ChapterHeadingLines);
                 songContent = ColumnBalancer.Render(layout);
                 currentPageNumber += layout.PagesConsumed;
             }
@@ -58,7 +58,7 @@ public static class LeafletBuilder
             }
 
             var chapterHeading = LatexEscaper.Escape(chapter.Title ?? chapter.Name);
-            chapterFiles.Add(new LeafletChapterFile(chapter.Name, $"\\chapter{{{chapterHeading}}}\n{songContent}"));
+            chapterFiles.Add(new LeafletChapterFile(chapter.Name, $"\\chapter*{{{chapterHeading}}}\n{songContent}"));
             inputLines.Add($"\\input{{Chapters/{chapter.Name}/chapter.tex}}");
         }
 
@@ -76,9 +76,11 @@ public static class LeafletBuilder
     /// internal punctuation. A blank input line (e.g. a stanza separator) is rendered as a
     /// completely empty visual line rather than dropped (2026-09-26 Clarification): in LaTeX, a
     /// line break (`\\`) immediately followed by only one blank source line doesn't produce a
-    /// visible empty line (there's no paragraph gap to see yet) — it takes *two* blank lines
-    /// after the `\\` to actually show one empty line, so each blank input line contributes two
-    /// blank output lines.
+    /// visible empty line (there's no paragraph gap to see yet) — it takes *two* blank source
+    /// lines after the `\\` to actually show one empty line. Each blank input line is therefore a
+    /// single entry ("\n", which the entries' newline-join expands to two blank source lines) so
+    /// that one entry always equals one rendered line for <see cref="SongBlock.HeightInLines"/>
+    /// and column packing.
     /// </summary>
     private static SongBlock RenderSongBlock(PlacedSong placedSong, int maxWidth)
     {
@@ -96,8 +98,7 @@ public static class LeafletBuilder
             var line = rawLine.Trim();
             if (line.Length == 0)
             {
-                lines.Add("");
-                lines.Add("");
+                lines.Add("\n");
                 continue;
             }
 

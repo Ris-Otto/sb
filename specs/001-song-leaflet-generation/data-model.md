@@ -160,7 +160,7 @@ Selected once per leaflet generation request (FR-002); also stored as a `Documen
 
 - `AsListed` — preserve the order songs were supplied/stored in (FR-006 physical ordering,
   distinct from `Song.SingingOrderNumber`).
-- `SpaceEfficient` — minimize unused space/pages, bounded by `MaxPermutations` (FR-007).
+- `SpaceEfficient` — minimize unused space/pages via page-by-page First Fit Descending (FR-007, 2026-10-19).
 
 ## LeafletChapter
 
@@ -172,7 +172,7 @@ populating `Songs` from `SongStore.List(documentName, chapter.Name)` (`ChapterSt
 | Field | Type      | Required | Notes |
 |-------|-----------|----------|-------|
 | Name  | string    | Yes      | `Chapter.Name`; used to compute the `\input{Chapters/<Name>/chapter.tex}` path. |
-| Title | string?   | No       | `Chapter.Title`; used as the `\chapter{...}` heading when present, falling back to `Name` when absent. |
+| Title | string?   | No       | `Chapter.Title`; used as the `\chapter*{...}` heading when present, falling back to `Name` when absent. |
 | Songs | `Song[]`  | Yes (may be empty) | This chapter's own songs only. An empty chapter is skipped entirely at build time (no heading, no `\input` line) — see research.md §2. |
 
 ## LeafletRequest
@@ -189,7 +189,6 @@ independent `chapter.tex` fragments, `\input`'d from the main document, matching
 | Chapters        | `LeafletChapter[]`   | Yes      | Must contain at least one song across all chapters combined (FR-012 — a request where every chapter is empty is rejected); one entry per chapter of the requested `Document`. |
 | Format          | `LeafletFormat`      | Yes      | Single- or multi-column; supplied per `documents build --format` invocation (2026-09-26 — no longer a `Document`-level default; see `Document`'s Validation rules). Scoped to *within* each chapter — never pairs songs across a chapter boundary (research.md §2). |
 | Ordering        | `OrderingMode`       | Yes      | As-listed or space-efficient (physical layout only), applied independently within each chapter's own songs. |
-| MaxPermutations | int                  | No       | Bound for the exact-search phase of space-efficient ordering (per chapter); defaults to 100 (per `sb/specification.md` §2.6.1) when not supplied. |
 
 **Validation rules**:
 - `Chapters.SelectMany(c => c.Songs)` MUST be non-empty overall (FR-012); a request where every
@@ -197,7 +196,6 @@ independent `chapter.tex` fragments, `\input`'d from the main document, matching
   a descriptive error rather than producing output. An *individual* empty chapter alongside
   others that have songs is valid — it is simply skipped at build time.
 - `Title` MUST be non-empty.
-- `MaxPermutations`, when supplied, MUST be a positive integer.
 
 ## PlacedSong
 
@@ -236,7 +234,7 @@ there.
 | Field       | Type   | Notes |
 |-------------|--------|-------|
 | ChapterName | string | Matches the source `LeafletChapter.Name`. |
-| Content     | string | `\chapter{<title-or-name>}` (escaped) followed by that chapter's formatted, column-balanced song content — the same structural pattern previously embedded directly in `Leaflet.Document` (research.md §2). |
+| Content     | string | `\chapter*{<title-or-name>}` (escaped) followed by that chapter's formatted, column-balanced song content — the same structural pattern previously embedded directly in `Leaflet.Document` (research.md §2). |
 
 ## Leaflet
 
@@ -256,7 +254,7 @@ a `PhysicalPosition` starting at 1 within the chapter. The per-song content for 
 (formatted, displaying `Song.SingingOrderNumber`, column-balanced per `Format`, scoped to that
 chapter's songs only) is derived by the formatting/column-balancing logic (research.md §2, §5),
 following the structural pattern in `sb/Tests/TestFiles/TeX/test.tex`, and becomes that chapter's
-entry in `Leaflet.ChapterFiles` (prefixed with its `\chapter{...}` heading). `Leaflet.Document` is
+entry in `Leaflet.ChapterFiles` (prefixed with its `\chapter*{...}` heading). `Leaflet.Document` is
 `DocumentTemplate` filled in with the title/subtitle and the list of `\input` lines pointing at
 each `ChapterFiles` entry (research.md §2) — it does not itself contain any song text.
 
@@ -341,6 +339,7 @@ the template actually specifies.
 | BaselineSkipPt  | double | Parsed from the top-level `\fontsize{size}{baselineskip}` command's second argument. |
 | UsableHeightPt  | double | `PaperHeightPt - TopMarginPt - BottomMarginPt`. |
 | LinesPerPage    | int    | `floor(UsableHeightPt / BaselineSkipPt)` — the per-column capacity research.md §5's column-fill algorithm packs `SongBlock`s against, chunking one that exceeds it on its own (research.md §14/§15). |
+| ChapterHeadingLines | int | Declared in the template as `% sb:chapter-heading-lines=N` (0 when absent) — lines the `\chapter*` heading takes at the top of a chapter's first page (measured 2026-10-19: ≈9.4 lines at 14.4pt, declared as 10). Only that first page's two columns have `LinesPerPage - ChapterHeadingLines` capacity (research.md §14). |
 
 **Validation rules**:
 - `LeafletBuilder` MUST fail with a descriptive error if `template-main.tex`'s `geometry` options

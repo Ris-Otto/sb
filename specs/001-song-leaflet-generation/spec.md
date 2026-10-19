@@ -202,6 +202,24 @@
   described the old, incorrect "columns end at the same height" behavior FR-005 already
   disclaimed above, missed by the same-session FR-005 edit.
 
+### Session 2026-10-19
+
+- Q: What algorithm should `space-efficient` ordering (FR-007) use to decide which songs go on
+  which page? → A: A First Fit Descending (FFD) algorithm, applied page by page. Starting at page
+  1: place the longest not-yet-placed song that fits the page; then fill the page's remaining
+  space as efficiently as possible with the longest remaining songs that still fit; remove every
+  song placed on that page from the pool; repeat for the next page until no songs remain. FR-007
+  revised; Assumptions' "exact algorithm is a planning concern" line replaced.
+- Q: Should First Fit Descending replace the existing bounded permutation search (`--max-permutations`,
+  default 100)? → A: Yes — replace it entirely. The exact-search phase, its `MaxPermutations` bound
+  (data-model.md, `documents build --max-permutations`/`-m`), and the greedy fallback are removed;
+  plan/data-model/contracts/tasks MUST be updated accordingly. (Line 106's mention above is
+  historical and superseded.)
+- Q: How should First Fit Descending treat a song too long to fit on a single page? → A: No special
+  handling — it simply spans as many pages as it needs, following the existing long-song rules
+  (FR-025, Edge Cases). Because it is the longest song it is placed first among the remaining
+  songs; whatever space is left on its final page is then filled by First Fit Descending as usual.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Generate a formatted leaflet from a list of songs (Priority: P1)
@@ -402,7 +420,14 @@ singing-order number in both outputs.
   space before starting a new page — front-loading page density — rather than leaving a page
   under-full while shorter songs are pushed later in the document. The one exception is a
   chapter's **final** page, which MAY be left with unused space, since no further song content is
-  available to fill it.
+  available to fill it. *(2026-10-19 Clarification)* The algorithm MUST be First Fit Descending,
+  applied page by page: for each page, starting at page 1, (1) place the longest remaining song
+  that fits, (2) fill the page's remaining space as efficiently as possible with the longest
+  remaining songs that still fit, (3) remove the placed songs from the pool, then (4) repeat for
+  the next page until the pool is empty. A song longer than one page is placed like any other
+  and spans multiple pages per FR-025; space left on its last page is filled the same way. Songs
+  of equal length keep their original relative order
+  (deterministic tie-break).
 - **FR-008** *(revised — see Clarifications)*: System MUST display each song's singing-order
   number in the generated leaflet — a number representing the order songs should be performed
   in, assigned independently of the song's physical position in the document.
@@ -547,7 +572,7 @@ singing-order number in both outputs.
   are trusted as-is, and the system only introduces a line break of its own when a line is too
   wide for the column (FR-004). The system does not infer musical phrasing from punctuation.
 - "Space-efficient" ordering means minimizing total unused vertical space / page count across the
-  leaflet; the exact algorithm is an implementation concern for planning, not this specification.
+  leaflet, using the First Fit Descending algorithm specified in FR-007 (2026-10-19 Clarification).
 - Rendering the final document into a viewable/printable form (e.g., compiling it to a viewable
   file) is a downstream step outside this feature's scope; this feature is responsible for
   producing a correct, complete source document.

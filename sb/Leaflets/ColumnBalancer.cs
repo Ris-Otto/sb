@@ -24,10 +24,15 @@ public static class ColumnBalancer
     private const string RightWidth = ".45\\textwidth";
     private const string Gutter = "0.075\\textwidth";
 
-    public static PageLayout Fill(IReadOnlyList<SongBlock> songBlocks, PageMetrics pageMetrics, int startingPageNumber)
+    public static PageLayout Fill(IReadOnlyList<SongBlock> songBlocks, PageMetrics pageMetrics, int startingPageNumber, int firstPageReservedLines = 0)
     {
         var linesPerPage = pageMetrics.LinesPerPage;
         var pages = new List<(Column Left, Column? Right)>();
+
+        // The chapter heading occupies the top of the chapter's first page (both of its columns),
+        // so only that page has less room; every later page has the full capacity.
+        int ColumnCapacity() => pages.Count == 0 ? linesPerPage - firstPageReservedLines : linesPerPage;
+
         var pageNumber = startingPageNumber;
         var fillingLeft = true;
         Column? pendingLeft = null;
@@ -62,11 +67,20 @@ public static class ColumnBalancer
 
         void PlaceBlock(SongBlock block)
         {
-            if (block.HeightInLines <= linesPerPage)
+            // A song that fits a full column but not this (heading-reduced) one is never split
+            // unless the column is still empty — it moves on to the next column instead.
+            if (block.HeightInLines > ColumnCapacity() && block.HeightInLines <= linesPerPage && currentLines.Count > 0)
+            {
+                FinishColumn();
+                PlaceBlock(block);
+                return;
+            }
+
+            if (block.HeightInLines <= ColumnCapacity())
             {
                 // Whole-song placement: move to a fresh column if it doesn't fit in what's left —
                 // never split a song that could fit entirely in an empty column.
-                if (currentLines.Count + block.HeightInLines > linesPerPage)
+                if (currentLines.Count + block.HeightInLines > ColumnCapacity())
                     FinishColumn();
 
                 currentLines.AddRange(block.Lines);
@@ -78,11 +92,11 @@ public static class ColumnBalancer
             var remaining = block.Lines;
             while (remaining.Count > 0)
             {
-                var spaceLeft = linesPerPage - currentLines.Count;
+                var spaceLeft = ColumnCapacity() - currentLines.Count;
                 if (spaceLeft <= 0)
                 {
                     FinishColumn();
-                    spaceLeft = linesPerPage;
+                    spaceLeft = ColumnCapacity();
                 }
 
                 var takeCount = Math.Min(spaceLeft, remaining.Count);

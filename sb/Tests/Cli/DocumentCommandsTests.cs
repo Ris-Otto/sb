@@ -131,16 +131,6 @@ public class DocumentCommandsTests
         Assert.That(ex!.Message, Does.Contain("FR-012"));
     }
 
-    [Test]
-    public void Build_NonPositiveMaxPermutations_ThrowsDescriptively()
-    {
-        DocumentCommands.Create(_documents, "doc", "Doc", Path.Combine(_tempRoot, "doc"));
-        _chapters.Add("doc", "main");
-        _songs.Add("doc", "main", "A Song", "lyrics", singingOrderNumber: 1);
-
-        Assert.Throws<ArgumentException>(() =>
-            DocumentCommands.Build(_documents, _chapters, _songs, _detector, "doc", maxPermutations: 0));
-    }
 
     [Test]
     public void Build_WritesTheDocumentsNamedTexFile_ToTheDocumentsIndexedPath()
@@ -168,7 +158,7 @@ public class DocumentCommandsTests
         var chapterTexPath = Path.Combine(document.Path, "Chapters", "main", "chapter.tex");
         Assert.That(File.Exists(chapterTexPath), Is.True);
         var chapterContent = File.ReadAllText(chapterTexPath);
-        Assert.That(chapterContent, Does.StartWith("\\chapter{Main Chapter}"));
+        Assert.That(chapterContent, Does.StartWith("\\chapter*{Main Chapter}"));
         Assert.That(chapterContent, Does.Contain("A Song"));
         Assert.That(chapterContent, Does.Contain("some lyrics"));
     }

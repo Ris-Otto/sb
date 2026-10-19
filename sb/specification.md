@@ -37,7 +37,9 @@ multiple output lines rather than overflowing or being truncated.
 ### 2.2 Ordering
 
 SB should, based on user input, order the songs in the most space-efficient
-way, or in the order that the user lists them.
+way, or in the order that the user lists them. Space-efficient ordering is First Fit
+Descending, page by page: place the longest song that fits, fill the rest of the page with the
+longest songs that still fit, remove them from the pool, and move on to the next page.
 
 ### 2.3 Numbering
 
@@ -148,7 +150,6 @@ flags or args (`build`):
 
 - document-name. Required
 - ordering === song number-wise or by space-efficiency
-- max-permutations === default 100?
 - format === [Ss]ingle-column | [Mm]ulti-column
 - other relevant stuff? open to suggestions
 

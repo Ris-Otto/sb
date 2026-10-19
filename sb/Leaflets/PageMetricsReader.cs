@@ -19,6 +19,7 @@ public static class PageMetricsReader
     private static readonly Regex GeometryOptionsPattern = new(@"\\usepackage\[([^\]]*)\]\{geometry\}");
     private static readonly Regex FontSizePattern = new(@"\\fontsize\{[0-9.]+pt\}\{([0-9.]+)pt\}");
     private static readonly Regex LengthPattern = new(@"^([0-9.]+)(in|pt)$");
+    private static readonly Regex ChapterHeadingLinesPattern = new(@"%\s*sb:chapter-heading-lines\s*=\s*(\d+)");
 
     public static PageMetrics Read(string rawTemplate, string templatePath)
     {
@@ -42,7 +43,16 @@ public static class PageMetricsReader
 
         var baselineSkipPt = double.Parse(fontSizeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
 
-        return new PageMetrics(A4HeightPt, topMarginPt, bottomMarginPt, baselineSkipPt);
+        return new PageMetrics(A4HeightPt, topMarginPt, bottomMarginPt, baselineSkipPt, ReadChapterHeadingLines(rawTemplate));
+    }
+
+    /// <summary>How many lines the template's `\chapter*` heading takes at the top of a chapter's
+    /// first page, declared in the template itself as `% sb:chapter-heading-lines=N` (titlesec
+    /// styling makes it impractical to derive from the template text). Absent means 0.</summary>
+    private static int ReadChapterHeadingLines(string rawTemplate)
+    {
+        var match = ChapterHeadingLinesPattern.Match(rawTemplate);
+        return match.Success ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
     }
 
     private static Dictionary<string, string> ParseOptions(string optionsText)

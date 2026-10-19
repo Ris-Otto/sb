@@ -42,7 +42,7 @@ Concretely:
   columns on the same row.
 
 **2026-09-26 decision**: Each chapter is rendered independently into its own `chapter.tex`
-fragment (`\chapter{<title-or-name>}` heading, escaped, followed by that chapter's own songs in
+fragment (`\chapter*{<title-or-name>}` heading, escaped, followed by that chapter's own songs in
 the exact per-song structural pattern above — unchanged), and `template-main.tex`'s
 `%Chapters come here` insertion point is filled with a sequence of `\input{Chapters/<name>/
 chapter.tex}` lines, one per chapter that has at least one song (an empty chapter is skipped
@@ -150,20 +150,30 @@ blank physical lines in the generated `.tex` source.
 
 ## 4. Space-efficient ordering algorithm
 
-**Decision**: Bounded exact search up to a `max-permutations` cutoff (default 100, matching the
-`build --max-permutations` flag sketched in `sb/specification.md` §2.6.1): for song counts small
-enough that the number of orderings to evaluate stays within the cutoff, evaluate all
-permutations (reusing the existing `PermutationsAndCombinations.cs` helpers) and pick the one
-minimizing total unused column space *as measured by actually simulating §5's column-fill
-algorithm* (how many lines of vertical space go unused across all pages this ordering produces).
-Beyond that cutoff, fall back to a deterministic greedy heuristic (place songs largest-first into
-the currently shortest column/page, à la a longest-processing-time bin-packing heuristic).
+**Decision (revised 2026-10-19 — `/speckit-clarify`, direct user requirement)**: First Fit
+Descending (FFD), applied page by page. Starting at page 1 of a chapter, with the chapter's songs
+as the candidate pool sorted by length descending (equal lengths keep their original relative
+order — deterministic tie-break): (1) place the longest song that fits the page; (2) keep placing
+the longest remaining song that still fits the page's remaining space until none fits; (3) remove
+the placed songs from the pool; (4) repeat for the next page until the pool is empty. "Fits" is
+decided by the same `ColumnBalancer.Fill`/`PageMetrics` simulation used to render the chapter, so
+FR-025's even-page rule and FR-026's capacity math are respected automatically. A song longer than
+a page needs no special case: when nothing fits an empty page it is placed anyway (it is the
+longest remaining song), spans as many pages as it needs, and FFD continues filling the space left
+on its final page. There is no search bound and no `max-permutations` option.
 
-**Rationale**: Satisfies FR-007 while keeping runtime bounded (factorial growth makes full brute
-force infeasible past single-digit song counts); reuses code already present in the project
-instead of adding new combinatorics logic. The greedy fallback guarantees a deterministic,
-reasonable result for realistic leaflet sizes (10–50 songs) as required by Constraints/edge
-cases (deterministic tie-breaking).
+**Rationale**: Satisfies FR-007 (front-load density; only the final page may be under-full) with a
+simple, deterministic, O(n²) algorithm — no factorial blowup, no tunable bound, and no second
+fallback algorithm to keep in sync (Constitution Principle II). It is the user's stated choice.
+
+**Alternatives considered (2026-10-19)**:
+- *Bounded exact permutation search + greedy fallback* (the prior design) — Rejected by the user:
+  two algorithms, a tunable bound, and a fallback that needed repeated correction.
+- *Keep `--max-permutations` as an accepted-but-ignored option* — Rejected: dead surface area.
+
+*(Everything below in this section, down to §5, is history. The bounded exact search,
+`GreedyFallback` and `--max-permutations` it describes are superseded by the decision above and
+are to be removed from `SongOrderer.cs`.)*
 
 **2026-09-27 correction (`/speckit-analyze` finding U1 remediation)**: This decision's own wording
 ("shortest column/page," a bin-packing heuristic) always described simulating real column-fill
@@ -463,7 +473,7 @@ document:
 ├── <Name>.tex                    # rendered from sb/template-main.tex immediately at `create` time, named after --name/documents.filename (see 2026-09-26 updates below)
 └── Chapters/                     # created empty at `create` time too
     └── <chapter-name>/            # <chapter-name> = chapters.name in the index
-        ├── chapter.tex            # \chapter{<title-or-name>} + generated per-song content, \input'd from <Name>.tex — absent if the chapter has zero songs (§2's 2026-09-26 update)
+        ├── chapter.tex            # \chapter*{<title-or-name>} + generated per-song content, \input'd from <Name>.tex — absent if the chapter has zero songs (§2's 2026-09-26 update)
         └── <song-name>.yml        # title, writer?, melody?, number, text (lyric lines), score? (see below)
 ```
 A document with zero chapters is a folder containing `<Name>.tex` and an empty `Chapters/` —
@@ -781,3 +791,25 @@ between two previously independent modules (Constitution Principle II).
   placement may adjust.
 
 All `NEEDS CLARIFICATION` items from Technical Context are resolved above.
+
+## 14a. Capacity corrections after real-world evidence (2026-10-19, `C:\Test`)
+
+Compiling a real chapter showed First Fit Descending looking erratic because its inputs were wrong,
+not the algorithm. Three fixes:
+
+1. **`\fontsize` was never applied.** `\fontsize{12pt}{14.4pt}` alone does nothing, and a bare
+   `\selectfont` in the preamble is undone by `\begin{document}` (LaTeX resets to `\normalsize`).
+   The template now redefines `\normalsize` itself as `\fontsize{12pt}{14.4pt}\selectfont` (an
+   `\AtBeginDocument` hook sized the body but left `\paragraph*` titles, which use `\normalsize`,
+   at 10pt); measured on a compiled page the line pitch is 14.3pt, matching
+   `PageMetrics.BaselineSkipPt`. `PageMetricsReader`'s
+   `\fontsize` regex is unchanged.
+2. **A blank input line is one rendered line, not two.** It still needs two blank *source* lines
+   after `\\`, but is now a single `SongBlock` entry (`"\n"`), so `HeightInLines` and
+   `SongOrderer.EstimateHeightInLines` count it once. Generated `.tex` text is unchanged.
+3. **The chapter heading takes room on page 1.** Chapters now use `\chapter*{...}` (no "Chapter N"
+   line, no TOC entry). The heading's height (≈9.4 lines; declared as 10) is read from the
+   template's `% sb:chapter-heading-lines=N` comment and reserved on the chapter's first page by
+   `ColumnBalancer.Fill(..., firstPageReservedLines)`; `SongOrderer` simulates with the same
+   reservation. A song that fits a full column but not the heading-reduced one moves to the next
+   column unless its column is still empty, in which case it is split like any over-long song.

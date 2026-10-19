@@ -44,79 +44,98 @@ public class SongOrdererTests
     private static Song MakeSong(string title, int lineCount) =>
         new(title, string.Join("\n", Enumerable.Repeat("line", lineCount)), singingOrderNumber: 1);
 
+    private static List<string> SpaceEfficientTitles(Song[] songs, int linesPerPage) =>
+        SongOrderer.Order(songs, OrderingMode.SpaceEfficient, SmallPageMetrics(linesPerPage))
+            .Select(s => s.Title)
+            .ToList();
+
     [Test]
-    public void Order_SpaceEfficient_MinimizesRealUnusedColumnSpace_WithinTheExactSearchBound()
+    public void Order_SpaceEfficient_PlacesTheLongestSongFirst()
     {
-        // 4 songs => 4! = 24 permutations, comfortably within the default 100-permutation bound.
-        // Heights (title + lines): A=52, B=2, C=52, D=2. LinesPerPage=53 => 2 columns hold 106,
-        // but the total (108) can't fit in 2 columns, so 3 is the true minimum — achievable only
-        // if B and D (the two small songs) end up adjacent, sharing one column. As-listed order
-        // [A,B,C,D] does NOT achieve this (A+B=54>53, so B starts its own column; C+D likewise
-        // needs a 4th column) — the space-efficient search must find a 3-column arrangement.
-        var a = MakeSong("A", 51); // 1 + 51 = 52
-        var b = MakeSong("B", 1);  // 1 + 1 = 2
-        var c = MakeSong("C", 51); // 52
-        var d = MakeSong("D", 1);  // 2
-        var songs = new[] { a, b, c, d };
-        var metrics = SmallPageMetrics(53);
+        var songs = new[] { MakeSong("Short", 1), MakeSong("Long", 7), MakeSong("Medium", 4) };
+
+        Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "Long", "Medium", "Short" }));
+    }
+
+    [Test]
+    public void Order_SpaceEfficient_StartsEachPageWithTheLongestRemainingSong_AndKeepsEqualLengthsInOriginalOrder()
+    {
+        // Heights (title + lines): D=2, C=4, A=6, E=10, B=10; a page holds two 10-line columns.
+        // Page 1 takes the two longest (E before B — equal length keeps original order); page 2
+        // restarts with the longest remaining song (A), then fills with C and D.
+        var songs = new[]
+        {
+            MakeSong("D", 1), MakeSong("C", 3), MakeSong("A", 5), MakeSong("E", 9), MakeSong("B", 9)
+        };
+
+        Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "E", "B", "A", "C", "D" }));
+    }
+
+    [Test]
+    public void Order_SpaceEfficient_FillsARemainingGapWithTheLongestSongThatStillFits()
+    {
+        // Heights: X=6, Y=6, Z=4, W=3 (X/Y tie, so input order puts Y first). Page 1: Y (left), X (right), then Z — the
+        // longest remaining song that still fits the right column's last 4 lines. W (3) is left
+        // for page 2: nothing is left on page 1 once Z has filled the right column.
+        var songs = new[] { MakeSong("W", 2), MakeSong("Z", 3), MakeSong("Y", 5), MakeSong("X", 5) };
+
+        Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "Y", "X", "Z", "W" }));
+    }
+
+    [Test]
+    public void Order_SpaceEfficient_SongLongerThanAPage_IsPlacedFirstAndItsLastPageIsFilledWithSmallerSongs()
+    {
+        // Long = 25 lines spans 3 columns (page 1 both columns, then 5 lines of page 2's left
+        // column); Small (4) fits the 5 lines left on that last page, Tiny (3) goes into the
+        // next column. Input order is deliberately reversed.
+        var songs = new[] { MakeSong("Tiny", 2), MakeSong("Small", 3), MakeSong("Long", 24) };
+
+        Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "Long", "Small", "Tiny" }));
+    }
+
+
+    [Test]
+    public void Order_SpaceEfficient_CountsABlankLineAsOneLine_WhenRankingSongsByLength()
+    {
+        // Heights: Spaced = title + 3 lines + 1 blank = 5; Plain = title + 4 lines = 5 — a tie,
+        // so the original order (Plain, Spaced) is kept. (A blank counted as two lines would
+        // make Spaced longer and float it to the front.)
+        var spaced = new Song("Spaced", "a\nb\n\nc", singingOrderNumber: 1);
+        var plain = MakeSong("Plain", 4);
+
+        Assert.That(SpaceEfficientTitles(new[] { plain, spaced }, 10), Is.EqualTo(new[] { "Plain", "Spaced" }));
+    }
+
+    [Test]
+    public void Order_SpaceEfficient_AccountsForTheChapterHeading_OnThePageItStartsOn()
+    {
+        // linesPerPage=10 with a 4-line heading => page 1's columns hold 6. Heights: A=10, B=10
+        // (B listed first, so it wins the tie), D=2. B spills across page 1's two columns
+        // (6 + 4); A would then spill past page 1, so it cannot join B there, but D fits the
+        // 2 lines left. Without the heading A and B would each fill a whole 10-line column.
+        var metrics = new PageMetrics(paperHeightPt: 100, topMarginPt: 0, bottomMarginPt: 0, baselineSkipPt: 10, chapterHeadingLines: 4);
+        var songs = new[] { MakeSong("D", 1), MakeSong("B", 9), MakeSong("A", 9) };
 
         var ordered = SongOrderer.Order(songs, OrderingMode.SpaceEfficient, metrics);
 
-        var titles = ordered.Select(s => s.Title).ToList();
-        Assert.That(titles, Is.Not.EqualTo(new[] { "A", "B", "C", "D" }));
-        // Whatever order was chosen, B and D must be adjacent (the only way to reach 3 columns).
-        var bIndex = titles.IndexOf("B");
-        var dIndex = titles.IndexOf("D");
-        Assert.That(Math.Abs(bIndex - dIndex), Is.EqualTo(1));
+        Assert.That(ordered.Select(s => s.Title), Is.EqualTo(new[] { "B", "D", "A" }));
+    }
+    [Test]
+    public void Order_SpaceEfficient_ReturnsEverySongExactlyOnce()
+    {
+        var songs = new[] { MakeSong("A", 9), MakeSong("B", 2), MakeSong("C", 5), MakeSong("D", 5), MakeSong("E", 1) };
+
+        var ordered = SongOrderer.Order(songs, OrderingMode.SpaceEfficient, SmallPageMetrics(10));
+
+        Assert.That(ordered, Is.EquivalentTo(songs));
     }
 
     [Test]
-    public void Order_SpaceEfficient_Greedy_PreservesOriginalOrder_WhenEverythingAlreadyFitsOneColumn()
+    public void Order_SpaceEfficient_SingleSong_ReturnsItUnchanged()
     {
-        // 6 songs => 6! = 720 permutations, exceeding maxPermutations: 1, forcing the greedy
-        // fallback (research.md §4, revised 2026-09-28). Total height (8+2+6+6+9+3=34) fits
-        // entirely within one 53-line column, so the greedy heuristic never needs to deviate from
-        // singing order at all — a direct requirement (spec.md FR-007): `space-efficient` mode
-        // should still track singing order as closely as possible.
-        var songs = new[]
-        {
-            MakeSong("A", 7), // height 8
-            MakeSong("B", 1), // height 2
-            MakeSong("C", 5), // height 6
-            MakeSong("D", 5), // height 6
-            MakeSong("E", 8), // height 9
-            MakeSong("F", 2)  // height 3
-        };
+        var songs = new[] { MakeSong("Only", 3) };
 
-        var ordered = SongOrderer.Order(songs, OrderingMode.SpaceEfficient, SmallPageMetrics(53), maxPermutations: 1);
-
-        Assert.That(ordered.Select(s => s.Title), Is.EqualTo(new[] { "A", "B", "C", "D", "E", "F" }));
-    }
-
-    [Test]
-    public void Order_SpaceEfficient_Greedy_FindsTheSameSpaceSavingArrangementAsExactSearch_ViaSimulation()
-    {
-        // Same data/expectation as Order_SpaceEfficient_MinimizesRealUnusedColumnSpace_WithinThe
-        // ExactSearchBound above, but forced through GreedyFallback (maxPermutations: 1) instead
-        // of ExactSearch (research.md §4, revised 2026-09-28, second correction). As-listed order
-        // [A,B,C,D] wastes a whole 4th column; the true minimum (3 columns) is only reachable by
-        // pairing B and D together. GreedyFallback now evaluates each placement by actually
-        // simulating ColumnBalancer.Fill (like ExactSearch already does) rather than an
-        // FR-025-unaware approximate capacity model, so it finds this same real improvement.
-        var a = MakeSong("A", 51); // height 52
-        var b = MakeSong("B", 1);  // height 2
-        var c = MakeSong("C", 51); // height 52
-        var d = MakeSong("D", 1);  // height 2
-        var songs = new[] { a, b, c, d };
-        var metrics = SmallPageMetrics(53);
-
-        var ordered = SongOrderer.Order(songs, OrderingMode.SpaceEfficient, metrics, maxPermutations: 1);
-
-        var titles = ordered.Select(s => s.Title).ToList();
-        Assert.That(titles, Is.Not.EqualTo(new[] { "A", "B", "C", "D" }));
-        var bIndex = titles.IndexOf("B");
-        var dIndex = titles.IndexOf("D");
-        Assert.That(Math.Abs(bIndex - dIndex), Is.EqualTo(1));
+        Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "Only" }));
     }
 
     [Test]

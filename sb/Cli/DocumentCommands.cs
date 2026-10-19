@@ -97,7 +97,6 @@ public static class DocumentCommands
         LocationMismatchDetector detector,
         string documentName,
         OrderingMode ordering = OrderingMode.AsListed,
-        int maxPermutations = 100,
         LeafletFormat format = LeafletFormat.SingleColumn)
     {
         var document = documents.Find(documentName);
@@ -117,10 +116,10 @@ public static class DocumentCommands
             .ToList();
 
         // LeafletRequest's constructor rejects a document with zero songs across all its
-        // chapters (FR-012) and a non-positive maxPermutations with descriptive errors — no need
-        // to duplicate those checks here. --format is supplied per `build` invocation (spec.md's
+        // chapters (FR-012) with a descriptive error — no need to duplicate that check here.
+        // --format is supplied per `build` invocation (spec.md's
         // 2026-09-26 Clarification), not stored on the Document.
-        var request = new LeafletRequest(document.Title, leafletChapters, format, ordering, maxPermutations, document.Subtitle);
+        var request = new LeafletRequest(document.Title, leafletChapters, format, ordering, document.Subtitle);
         var leaflet = LeafletBuilder.Build(request);
 
         foreach (var chapterFile in leaflet.ChapterFiles)

@@ -26,7 +26,7 @@ never directly in the main document (`Leaflet.Document`).
 
 - One entry per chapter that has at least one song — a chapter with zero songs produces no entry
   at all (no heading, no corresponding `\input` line in `Leaflet.Document`).
-- Each entry's content begins with `\chapter{<heading>}` (escaped), where `<heading>` is the
+- Each entry's content begins with `\chapter*{<heading>}` (escaped), where `<heading>` is the
   chapter's own `Title` when present, otherwise its `Name`.
 - Followed by that chapter's own song blocks only — the single-/multi-column guarantees below
   apply *within* one `ChapterFiles` entry; a song block never appears in more than one entry, and

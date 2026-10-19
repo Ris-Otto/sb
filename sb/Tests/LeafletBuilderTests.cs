@@ -110,6 +110,42 @@ public class LeafletBuilderTests
         Assert.That(lines[firstStanzaIndex + 3], Is.EqualTo("second stanza\\\\"));
     }
 
+
+    [Test]
+    public void Build_MultiColumn_CountsABlankInputLineAsOneVisualLine_WhenPackingColumns()
+    {
+        // 21 text lines + 20 blank separators + title = 42 visual lines, which fits one column of
+        // page 1 (53 minus the heading) — counted double it would not (62). The second song must start the RIGHT column (blank lines
+        // render as one visual line each, not two). Placed second so page 1's chapter-heading
+        // reservation is irrelevant to the song that is checked.
+        var stanzas = string.Join("\n\n", Enumerable.Repeat("line", 21));
+        var songs = new[]
+        {
+            new Song("Spacious", stanzas, singingOrderNumber: 1),
+            new Song("Next", "tail\ntail\ntail", singingOrderNumber: 2)
+        };
+        var request = new LeafletRequest("Test", OneChapter(songs), LeafletFormat.MultiColumn, OrderingMode.AsListed);
+
+        var content = LeafletBuilder.Build(request).ChapterFiles.Single().Content;
+
+        var gutter = content.IndexOf("\\hspace{0.075\\textwidth}", StringComparison.Ordinal);
+        Assert.That(gutter, Is.GreaterThan(0));
+        Assert.That(content.IndexOf("Next", StringComparison.Ordinal), Is.GreaterThan(gutter));
+        Assert.That(content.LastIndexOf("line\\\\", StringComparison.Ordinal), Is.LessThan(gutter));
+    }
+
+    [Test]
+    public void Build_MultiColumn_ReservesTheChapterHeadingsHeightOnTheChaptersFirstPage()
+    {
+        // 49 visual lines fit a full 53-line column, but not page 1's column once the chapter
+        // heading has taken its share — so the song must continue into the right column.
+        var song = new Song("Tall", string.Join("\n", Enumerable.Repeat("line", 48)), singingOrderNumber: 1);
+        var request = new LeafletRequest("Test", OneChapter(song), LeafletFormat.MultiColumn, OrderingMode.AsListed);
+
+        var content = LeafletBuilder.Build(request).ChapterFiles.Single().Content;
+
+        Assert.That(content, Does.Contain("\\hspace{0.075\\textwidth}"));
+    }
     [Test]
     public void Build_RejectsAnEmptySongList()
     {
@@ -234,10 +270,10 @@ public class LeafletBuilderTests
 
         Assert.That(leaflet.ChapterFiles, Has.Exactly(2).Items);
         Assert.That(leaflet.ChapterFiles[0].ChapterName, Is.EqualTo("first"));
-        Assert.That(leaflet.ChapterFiles[0].Content, Does.StartWith("\\chapter{First Chapter}"));
+        Assert.That(leaflet.ChapterFiles[0].Content, Does.StartWith("\\chapter*{First Chapter}"));
         Assert.That(leaflet.ChapterFiles[0].Content, Does.Contain("lyrics a"));
         Assert.That(leaflet.ChapterFiles[1].ChapterName, Is.EqualTo("second"));
-        Assert.That(leaflet.ChapterFiles[1].Content, Does.StartWith("\\chapter{Second Chapter}"));
+        Assert.That(leaflet.ChapterFiles[1].Content, Does.StartWith("\\chapter*{Second Chapter}"));
         Assert.That(leaflet.ChapterFiles[1].Content, Does.Contain("lyrics b"));
 
         Assert.That(leaflet.Document, Does.Contain("\\input{Chapters/first/chapter.tex}"));
@@ -255,7 +291,7 @@ public class LeafletBuilderTests
 
         var leaflet = LeafletBuilder.Build(request);
 
-        Assert.That(leaflet.ChapterFiles.Single().Content, Does.StartWith("\\chapter{main}"));
+        Assert.That(leaflet.ChapterFiles.Single().Content, Does.StartWith("\\chapter*{main}"));
     }
 
     [Test]

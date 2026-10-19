@@ -23,6 +23,35 @@ public class PageMetricsReaderTests
         Assert.That(metrics.LinesPerPage, Is.GreaterThan(0));
     }
 
+
+    [Test]
+    public void Read_ReservesALeadingChapterHeadingHeight_FromTheRealTemplate()
+    {
+        var rawTemplate = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "template-main.tex"));
+
+        var metrics = PageMetricsReader.Read(rawTemplate, "template-main.tex");
+
+        Assert.That(metrics.ChapterHeadingLines, Is.GreaterThan(0));
+        Assert.That(metrics.ChapterHeadingLines, Is.LessThan(metrics.LinesPerPage));
+    }
+
+    [Test]
+    public void TheRealTemplate_AppliesItsFontsizeViaSelectfont_SoTheAssumedBaselineIsReal()
+    {
+        // `\fontsize{..}{..}` alone is ignored by LaTeX until `\selectfont` follows it.
+        var rawTemplate = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "template-main.tex"));
+
+        Assert.That(rawTemplate, Does.Contain("\\fontsize{12pt}{14.4pt}\\selectfont"));
+    }
+
+    [Test]
+    public void Read_ReservesNoChapterHeadingLines_WhenTheTemplateDoesNotDeclareAny()
+    {
+        var rawTemplate = "\\usepackage[a4paper, margin=0.4in]{geometry}\n\\fontsize{12pt}{14.4pt}";
+
+        Assert.That(PageMetricsReader.Read(rawTemplate, "t.tex").ChapterHeadingLines, Is.EqualTo(0));
+    }
+
     [Test]
     public void Read_FallsBackToTheSingleMarginOption_WhenTmarginAndBmarginAreAbsent()
     {

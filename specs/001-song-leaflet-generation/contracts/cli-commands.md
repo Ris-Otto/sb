@@ -51,9 +51,9 @@ with `--chapters` per `sb/specification.md` §2.6.1, lists songs under their cha
 default `as-listed`; a positional argument despite being optional, per a further 2026-09-26
 Clarification — the only exception to "required flags become arguments, optional flags stay
 options" made so far).
-**Options**: `--max-permutations`/`-m` (optional positive integer, default 100), `--format`/`-f`
-(`single-column`|`multi-column`, default `single-column` — moved here from `documents create`
-2026-09-26; supplied fresh on every build, not a stored document default).
+**Options**: `--format`/`-f` (`single-column`|`multi-column`, default `single-column` — moved here from `documents create`
+2026-09-26; supplied fresh on every build, not a stored document default). *(2026-10-19: the former
+`--max-permutations`/`-m` option is removed — superseded by First Fit Descending, FR-007.)*
 
 - **Success**: loads the named `Document` (resolving its folder via the `documents` index row,
   and its `Title`/`Subtitle` by parsing them back out of its current `<name>.tex`), groups its
@@ -69,7 +69,6 @@ options" made so far).
   - Unknown `document-name` → descriptive not-found error.
   - Document has zero songs across all its chapters → descriptive error citing FR-012 ("at least
     one song is required"), nothing written.
-  - `--max-permutations` not a positive integer → descriptive error, nothing written.
   - The document's indexed path (or a chapter's/song's computed path) doesn't match the
     filesystem → descriptive `MismatchReport`-based error (FR-023); `build` refuses to write a
     possibly-wrong output rather than guessing.

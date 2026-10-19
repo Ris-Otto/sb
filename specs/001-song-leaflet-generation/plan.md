@@ -112,10 +112,9 @@ the repository's existing structure.
 **Performance Goals**: Generating a leaflet for a typical 10–20 song leaflet completes well under
 1 second of engine processing time, excluding external LaTeX-to-PDF compilation (out of scope).
 
-**Constraints**: The space-efficient ordering search MUST stay bounded, capped by a
-`--max-permutations` CLI flag (default 100, per `sb/specification.md` §2.6.1), falling back to a
-deterministic greedy heuristic beyond that bound. Tie-breaking during ordering MUST be
-deterministic. A song's singing-order number MUST be unique within its document (FR-016) and
+**Constraints**: Space-efficient ordering MUST use page-by-page First Fit Descending (FR-007,
+2026-10-19 Clarification; research.md §4) — no permutation search, no `--max-permutations` flag.
+Tie-breaking during ordering MUST be deterministic (equal-length songs keep original order). A song's singing-order number MUST be unique within its document (FR-016) and
 MUST NOT be mutated by any ordering/layout operation (FR-009). Page/column capacity
 (`PageMetrics.LinesPerPage`) MUST be derived from `template-main.tex`'s own `geometry`/`\fontsize`
 values at build time, never hardcoded (FR-026, 2026-09-27 Clarification, research.md §14); a song
@@ -181,7 +180,7 @@ specs/001-song-leaflet-generation/
 ```text
 sb/                             # existing single CLI project (sb.csproj)
 ├── Program.cs                  # existing CLI entry point — now wired to Cli/*Commands.cs
-├── PermutationsAndCombinations.cs  # existing combinatorics helpers, reused by Ordering/
+├── PermutationsAndCombinations.cs  # existing combinatorics helpers (no longer used by Ordering/ as of 2026-10-19 — remove if unused elsewhere)
 ├── template-main.tex           # existing master document template (title page + \input point)
 ├── Index/
 │   ├── SbIndexDatabase.cs        # opens/creates the SQLite file, applies schema (documents/chapters/songs tables)
@@ -202,7 +201,7 @@ sb/                             # existing single CLI project (sb.csproj)
 │   ├── LineWrapper.cs            # word-wraps a line that's too wide for the column (FR-004) — the only line-splitting logic left after phrase-splitting's removal (2026-09-26)
 │   └── LatexEscaper.cs           # escapes LaTeX-special characters in output text; Escape/Unescape (2026-09-26)
 ├── Ordering/
-│   └── SongOrderer.cs            # AsListed / SpaceEfficient physical ordering (bounded permutation + greedy fallback); (2026-09-27, `/speckit-analyze` finding U1) SpaceEfficient's cost function simulates real column-fill packing (ColumnBalancer/PageMetrics) instead of the stale pairwise-adjacent approximation
+│   └── SongOrderer.cs            # AsListed / SpaceEfficient physical ordering (page-by-page First Fit Descending, 2026-10-19; replaces bounded permutation + greedy fallback); (2026-09-27, `/speckit-analyze` finding U1) SpaceEfficient's cost function simulates real column-fill packing (ColumnBalancer/PageMetrics) instead of the stale pairwise-adjacent approximation
 ├── Leaflets/
 │   ├── LeafletFormat.cs          # SingleColumn / MultiColumn enum
 │   ├── LeafletChapter.cs         # (name, title?, songs) — one chapter's input to a build (2026-09-26)
@@ -410,3 +409,13 @@ demonstration case turned out to be a waste-neutral tie under real simulation (P
 test now demonstrates a genuine, non-tied improvement). Verified against the real `C:\Test`
 fixture, not just synthetic test data. All five principles remain PASS; full suite re-confirmed
 green (142/142).
+
+*Post-`/speckit-clarify` re-check (First Fit Descending replaces permutation search + greedy
+fallback, 2026-10-19)*: No new dependency or abstraction. `SongOrderer.SpaceEfficient` is
+rewritten as page-by-page First Fit Descending, still using the existing `ColumnBalancer.Fill`/
+`PageMetrics` simulation to decide "fits". This is a net simplification (Principle II): the
+exact-search phase, `GreedyFallback`, the `MaxPermutations` bound, the `--max-permutations`
+option and (if unused elsewhere) the `PermutationsAndCombinations.cs` reuse are removed.
+Principles III/IV: `SongOrdererTests` and `LeafletBuilderTests` cases for the removed paths are
+replaced by failing FFD tests written first (longest-first placement, gap fill, over-long song,
+equal-length tie-break, final-page under-fill allowed). All five principles remain PASS.

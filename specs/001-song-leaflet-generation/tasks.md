@@ -28,6 +28,12 @@ forced-break rule. Now simulation-driven (calls `ColumnBalancer.Fill` directly, 
 does) instead of approximating. `dotnet test`: 142/142 still passing. See research.md §4's second
 2026-09-28 correction.
 
+**2026-10-19 update (`/speckit-clarify` → `/speckit-plan` → `/speckit-tasks`)**: space-efficient
+ordering is replaced by page-by-page First Fit Descending (FR-007, research.md §4); the permutation
+search, `GreedyFallback` and `--max-permutations` are removed. T045, T047, T048 and T049 below are
+marked superseded and re-opened in effect by **Phase 8** (T061-T069), which is the only unfinished
+work. Everything outside Phase 8 reflects already-shipped behavior.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies on an incomplete task)
@@ -181,7 +187,7 @@ involved), choose single- vs. multi-column, and verify the output satisfies
   chapter's own songs via `SongOrderer`, rendering each song block (title/melody/lyrics as one
   block, escaped, `LineWrapper`-wrapped where needed, blank input lines as two blank output
   lines), column-balancing via `ColumnBalancer` when `Format` is `MultiColumn` — and assembles
-  `Leaflet.ChapterFiles` (one `\chapter{...}`-prefixed entry per non-empty chapter) plus
+  `Leaflet.ChapterFiles` (one `\chapter*{...}`-prefixed entry per non-empty chapter) plus
   `Leaflet.Document` (the main template with one `\input` line per chapter file, never song
   content directly); make T014 pass.
 
@@ -265,16 +271,16 @@ created, stored, and located correctly, alongside the standalone formatting engi
 ## Phase 5: User Story 3 - Order songs automatically or as specified (Priority: P3)
 
 **Goal**: `sb documents build` produces a leaflet with each chapter's songs either in listed order
-or automatically arranged to minimize unused space, bounded by `--max-permutations` — and, when
-minimizing space, still tracking listed order as closely as possible, deviating only to use column
-space that would otherwise go to waste (FR-007).
+or automatically arranged to minimize unused space via page-by-page First Fit Descending
+(FR-007, 2026-10-19; implemented by Phase 8 — the T045/T047/T048 text below describes the
+superseded permutation search).
 
 **Independent Test**: Build the same document twice — `as-listed` and `space-efficient` — and
 verify the resulting order differs accordingly and is deterministic for a given input/choice.
 
 ### Tests for User Story 3 ⚠️
 
-- [X] T045 [P] [US3] Failing tests for `SongOrderer.Order(..., OrderingMode.SpaceEfficient, ...)`
+- [X] *(superseded by T061)* T045 [P] [US3] Failing tests for `SongOrderer.Order(..., OrderingMode.SpaceEfficient, ...)`
   in `sb/Tests/SongOrdererTests.cs`: exact search (small song counts, within `MaxPermutations`)
   finds the true minimum-waste ordering by simulating `ColumnBalancer.Fill`; beyond the bound, the
   deterministic greedy fallback also simulates `ColumnBalancer.Fill` for every candidate placement
@@ -285,13 +291,13 @@ verify the resulting order differs accordingly and is deterministic for a given 
 - [X] T046 [P] [US3] Extend `sb/Tests/LeafletBuilderTests.cs`: `SpaceEfficient` vs. `AsListed`
   output for the same songs minimizes unused space/pages relative to the original order
   (Acceptance Scenario 2); ordering never mixes songs across chapters.
-- [X] T047 [P] [US3] Extend `sb/Tests/Cli/DocumentCommandsTests.cs`: `sb documents build
+- [X] *(superseded by T064)* T047 [P] [US3] Extend `sb/Tests/Cli/DocumentCommandsTests.cs`: `sb documents build
   <name> [ordering] --max-permutations` per `contracts/cli-commands.md`, including the
   not-a-positive-integer error.
 
 ### Implementation for User Story 3
 
-- [X] T048 [US3] Extend `SongOrderer` in `sb/Ordering/SongOrderer.cs` (depends on T018, T022,
+- [X] *(superseded by T062)* T048 [US3] Extend `SongOrderer` in `sb/Ordering/SongOrderer.cs` (depends on T018, T022,
   T027): `ExactSearch` evaluates every permutation (bounded by `MaxPermutations`, default 100) via
   `PermutationsAndCombinations.cs`, keeping the first minimum-waste ordering found — since the
   original order is tried first and only a strictly better one replaces it, ties favor the
@@ -368,7 +374,68 @@ flow (format + structure + ordering + numbering) works end-to-end.
 - [X] T059 [P] Aggregate-accuracy test (`sb/Tests/AggregateAccuracyTests.cs`) confirming SC-002
   (≥95% of real fixtures' own input lines fit one output line at the narrower multi-column width)
   holds across every fixture in `sb/Tests/TestFiles/*.txt`, not just individually-covered cases.
-- [X] T060 `dotnet test` full suite green (142/142).
+- [X] T060 `dotnet test` full suite green (142/142; re-run after Phase 8 as T069).
+
+---
+
+## Phase 8: User Story 3 rework — First Fit Descending ordering (2026-10-19)
+
+**Goal**: Replace `SongOrderer`'s bounded permutation search + `GreedyFallback` with page-by-page
+First Fit Descending (FR-007; research.md §4) and remove every `MaxPermutations` /
+`--max-permutations` trace. Algorithm, per chapter: sort the pool by length descending (equal
+lengths keep original order); for each page, place the longest remaining song that fits, then keep
+placing the longest remaining song that still fits the page's remaining space until none does;
+remove placed songs from the pool; repeat for the next page until the pool is empty. "Fits" is
+decided by simulating `ColumnBalancer.Fill` with `PageMetrics` (so FR-025's even-page rule holds). A
+song longer than a page is placed when nothing else fits an empty page and simply spans pages; FFD
+then fills the space left on its last page. The chapter's final page may stay under-full.
+
+**Independent Test**: `dotnet test` green; `sb documents build <name> space-efficient` places the
+longest songs first per page and fills each non-final page's gaps with the longest songs that fit.
+
+### Tests (write first; confirm each FAILS before T062 — Constitution Principle III)
+
+- [X] T061 [P] [US3] Replace the `SpaceEfficient` cases in `sb/Tests/SongOrdererTests.cs` (delete
+  the exact-search and `GreedyFallback`/`maxPermutations: 1` cases) with First Fit Descending
+  cases: (a) the longest song is placed first; (b) after it, the longest remaining songs that fit
+  fill the page's remaining space before a new page starts; (c) placed songs are removed so page 2
+  restarts with the longest remaining song; (d) equal-length songs keep original relative order;
+  (e) a song longer than one page is placed (spans pages, FR-025) and FFD fills the space left on its
+  final page; (f) only the final page may be under-full (SC-012); (g) output is deterministic across
+  repeated calls; (h) `Order` no longer accepts a max-permutations argument (signature is
+  `Order(songs, mode, pageMetrics)`).
+- [X] T063 [P] [US3] Update `sb/Tests/LeafletBuilderTests.cs`: `SpaceEfficient` vs. `AsListed` still
+  differs and uses fewer-or-equal pages; ordering never mixes chapters; remove any
+  `MaxPermutations` usage in `LeafletRequest` construction.
+- [X] T064 [P] [US3] *(unknown-option case verified manually via `sb documents build x -m 5`, no CLI parse-test harness exists)* Update `sb/Tests/Cli/DocumentCommandsTests.cs`: delete the `--max-permutations`
+  /`-m` cases (including the not-a-positive-integer error); add a case asserting `--max-permutations`
+  is now an unrecognized option (non-zero exit, nothing written), per `contracts/cli-commands.md`.
+
+### Implementation
+
+- [X] T062 [US3] Rewrite `SongOrderer.SpaceEfficient` in `sb/Ordering/SongOrderer.cs` (depends on
+  T061): implement the page-by-page First Fit Descending described in the phase goal using
+  `ColumnBalancer.Fill`/`PageMetrics` to test fit; delete `ExactSearch`, `GreedyFallback`,
+  `ComputeWastedSpace` (if now unused) and the `maxPermutations` parameter; `AsListed` unchanged;
+  make T061 pass. Keep methods short and named for intent (Constitution Principle I).
+- [X] T065 [P] [US3] Remove `MaxPermutations` from `sb/Leaflets/LeafletRequest.cs` (the property,
+  the `maxPermutations` constructor parameter and its "positive integer" validation) and update
+  the `SongOrderer.Order(...)` call in `sb/Leaflets/LeafletBuilder.cs` (line ~41) and its
+  precondition comment/validation (depends on T062; make T063 pass).
+- [X] T066 [US3] Remove the `--max-permutations`/`-m` option from `sb/Cli/CliRoot.cs` (the
+  `maxPermutationsOption` declaration, `build.Options.Add(...)` and the value passed to the
+  `LeafletRequest`) so `sb documents build <document-name> [ordering] [-f|--format]` matches
+  `contracts/cli-commands.md` (depends on T065; make T064 pass).
+- [X] T067 [P] [US3] Delete `sb/PermutationsAndCombinations.cs` if nothing else references it
+  (`grep` first; keep it if any other caller exists) (depends on T062).
+- [X] T068 [P] [US3] Update `sb/specification.md`: remove the `max-permutations === default 100?`
+  note (~line 151) and describe space-efficient ordering as First Fit Descending, matching the spec.
+- [X] T069 [US3] Run `dotnet build` (no new warnings) and `dotnet test` — full suite green; then
+  re-run `quickstart.md`'s `space-efficient` scenario and update its expected outcome if the
+  resulting order changed (depends on T061-T068).
+
+**Checkpoint**: space-efficient ordering is First Fit Descending only; no permutation search,
+greedy fallback or `--max-permutations` remains in code, tests, contracts or docs.
 
 ---
 

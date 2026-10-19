@@ -26,7 +26,6 @@ fixture large enough to span real physical pages (research.md §14/§15, `latex-
 - `request.Chapters` MUST contain at least one `Song` across all chapters combined (FR-012) —
   an individual chapter with zero songs is fine as long as at least one other chapter has songs.
 - Each `Song` in any chapter MUST have non-empty `Title` and `Text`.
-- If `request.MaxPermutations` is supplied, it MUST be a positive integer.
 - `sb/template-main.tex` MUST exist and contain the expected title/subtitle placeholders and
   content insertion point (see `data-model.md`'s `DocumentTemplate`), and its `geometry`
   margin options and `\fontsize` command MUST be present and parseable so `PageMetrics` (FR-026)
@@ -38,7 +37,7 @@ fixture large enough to span real physical pages (research.md §14/§15, `latex-
   songs are dropped or duplicated; a chapter with zero songs contributes nothing.
 - Within each chapter, that chapter's own songs are ordered according to `request.Ordering`
   (`AsListed` preserves the chapter's own list order; `SpaceEfficient` minimizes that chapter's
-  unused column space, bounded by `MaxPermutations` — see research.md §4) — ordering never mixes
+  unused column space via page-by-page First Fit Descending — see research.md §4) — ordering never mixes
   songs from different chapters.
 - Within each chapter, `PhysicalPosition` restarts at 1 for that chapter's first (ordered) song
   and increments from there (internal layout ordering only, per chapter — never displayed).
@@ -47,7 +46,7 @@ fixture large enough to span real physical pages (research.md §14/§15, `latex-
   display purposes (FR-008).
 - `result.ChapterFiles` contains exactly one entry per chapter that had at least one song (empty
   chapters are skipped — no entry, no heading), each a non-empty string starting with
-  `\chapter{<title-or-name>}` (escaped; falls back to the chapter's `Name` when it has no
+  `\chapter*{<title-or-name>}` (escaped; falls back to the chapter's `Name` when it has no
   `Title`) followed by that chapter's formatted, column-balanced song content (see
   `latex-output-contract.md`).
 - `result.Document` is a non-empty string containing the main LaTeX document —
@@ -55,8 +54,8 @@ fixture large enough to span real physical pages (research.md §14/§15, `latex-
   `request.Subtitle` and its content insertion point replaced by one
   `\input{Chapters/<name>/chapter.tex}` line per `result.ChapterFiles` entry, in chapter order —
   `result.Document` never contains song content directly.
-- Calling `Build` twice with an identical `request` (same chapters/songs, format, ordering, and
-  max-permutations) always returns identical `result.Songs` order, `result.ChapterFiles` content,
+- Calling `Build` twice with an identical `request` (same chapters/songs, format, and ordering)
+  always returns identical `result.Songs` order, `result.ChapterFiles` content,
   and `result.Document` (determinism — required by the edge case on tie-breaking).
 - In multi-column layout, a song whose content exceeds one page's line capacity is never
   truncated — it is chunked across consecutive columns/pages per FR-025 (see
