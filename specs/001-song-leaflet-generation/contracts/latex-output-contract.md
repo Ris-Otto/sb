@@ -26,8 +26,9 @@ never directly in the main document (`Leaflet.Document`).
 
 - One entry per chapter that has at least one song — a chapter with zero songs produces no entry
   at all (no heading, no corresponding `\input` line in `Leaflet.Document`).
-- Each entry's content begins with `\chapter*{<heading>}` (escaped), where `<heading>` is the
-  chapter's own `Title` when present, otherwise its `Name`.
+- Each entry's content begins with `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}` (FR-027; overrides
+  any older main-document `\titlespacing`), then `\chapter*{<heading>}` (escaped), where
+  `<heading>` is the chapter's own `Title` when present, otherwise its `Name`.
 - Followed by that chapter's own song blocks only — the single-/multi-column guarantees below
   apply *within* one `ChapterFiles` entry; a song block never appears in more than one entry, and
   column-filling (2026-09-27: sequential, not paired — see below) never stacks two songs from
@@ -44,9 +45,20 @@ never directly in the main document (`Leaflet.Document`).
   <melody>}\\` attribution, then its lyric lines — each of the song's own input lines becomes one
   output line ending in `\\` as-is (2026-09-26: phrase-splitting removed, FR-003), wrapped further
   only per the next section.
-- A **blank** input line (e.g. a stanza separator) becomes two consecutive blank output lines
-  (2026-09-26 Clarification) — not zero (dropped) and not one (which wouldn't render as a visible
-  gap immediately after a `\\` in this plain `\\`-terminated content — see research.md §3).
+- A **blank** input line between text lines (e.g. a stanza separator) becomes one `\mbox{}\\`
+  output line (2026-10-19; supersedes the earlier two-blank-source-lines rule, research.md §3).
+  Blank lines at the very start or end of a song's text are dropped (FR-003). A bare `\\` line
+  never appears (invalid under `\raggedright`).
+- Lyrics are set `\raggedright`; the planned max line width in multi-column layout is 41
+  characters (FR-004). `\raggedright` is set *inside* each minipage and inside a
+  `\begingroup…\par\endgroup` for the single-column body and for a full-width lone-column page —
+  never at chapter-file level, where it leaks into the paragraphs holding the minipage rows and
+  makes compiled pages overflow (verified against a real LuaLaTeX compile, 2026-10-19).
+- A song's title is `\paragraph*{<n>. <title>}\mbox{}\\` — the line break sits *outside* the title
+  argument, because `titlesec` sets a run-in title in an `\sbox` (LR mode), where `\\` raises
+  "Not allowed in LR mode" under `\raggedright`.
+- Exactly one blank line (`\mbox{}\\`) precedes every song title except one that is first in its
+  column (FR-027).
 - No LaTeX-reserved character from a `Song`'s `Title`, `Text`, `Writer`, or `Melody` appears
   unescaped in the output.
 

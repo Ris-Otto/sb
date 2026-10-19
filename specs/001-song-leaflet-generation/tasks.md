@@ -32,7 +32,7 @@ does) instead of approximating. `dotnet test`: 142/142 still passing. See resear
 ordering is replaced by page-by-page First Fit Descending (FR-007, research.md §4); the permutation
 search, `GreedyFallback` and `--max-permutations` are removed. T045, T047, T048 and T049 below are
 marked superseded and re-opened in effect by **Phase 8** (T061-T069), which is the only unfinished
-work. Everything outside Phase 8 reflects already-shipped behavior.
+work (plus Phase 9, T070-T079). Everything outside Phases 8-9 reflects already-shipped behavior.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -436,6 +436,62 @@ longest songs first per page and fills each non-final page's gaps with the longe
 
 **Checkpoint**: space-efficient ordering is First Fit Descending only; no permutation search,
 greedy fallback or `--max-permutations` remains in code, tests, contracts or docs.
+
+---
+
+## Phase 9: User Story 1 rework — title gap, blank-line handling, ragged-right lyrics (2026-10-19)
+
+**Goal**: Implement FR-027, the FR-003 blank-line trimming, and the FR-004 width/ragged-right change
+(spec.md Clarifications 2026-10-19; research.md §3 addendum and §17; `contracts/latex-output-contract.md`):
+(1) exactly one blank line above every song title except a column-leading one, emitted explicitly as
+`\mbox{}\`; (2) every chapter file starts with `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}`; (3)
+leading/trailing blank lines of a song's text are ignored; (4) interior blank lyric lines are emitted
+as `\mbox{}\` (never a bare `\`, and no longer two blank source lines); (5) lyrics are `\raggedright`
+and the multi-column planned max width is 41 characters.
+
+**Independent Test**: `dotnet test` green; building a multi-column document shows one blank line above
+each non-column-leading title, none at column tops, and no stretched or "no line here to end" lines when compiled.
+
+### Tests (write first; confirm each FAILS before implementing — Constitution Principle III)
+
+- [X] T070 [P] [US1] In `sb/Tests/LeafletBuilderTests.cs` add cases: (a) leading and trailing blank
+  (empty or whitespace-only) lines in `Song.Text` produce no output lines and no extra `HeightInLines`;
+  (b) an interior blank line renders as exactly one `\mbox{}\` entry and no line is a bare `\`;
+  (c) every `ChapterFiles` entry begins with `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}` before
+  `\chapter*{...}` (update the existing `StartWith("\chapter*{...}")` assertions at lines ~273/276/294);
+  (d) lyrics are preceded by `\raggedright` within each song block/minipage.
+- [X] T071 [P] [US1] In `sb/Tests/ColumnBalancerTests.cs` add cases: a song that is not first in its
+  column gets one `\mbox{}\` above its title and its height counts that line; a column-leading
+  song gets neither; capacity math (FR-026) fits/overflows exactly one line sooner for a non-leading
+  song; a continuation chunk of a long song gets no gap.
+- [X] T072 [P] [US1] Update `sb/Tests/AggregateAccuracyTests.cs`: change `MultiColumnMaxWidth` from 50
+  to 41 and keep the SC-002 (≥90% of lines unwrapped, relaxed from 95%) assertion meaningful against the real fixture songs.
+- [X] T073 [P] [US1] Update `sb/Tests/Cli/DocumentCommandsTests.cs` line ~161 (`StartWith("\chapter*{Main
+  Chapter}")`) to the new chapter-file prefix.
+
+### Implementation
+
+- [X] T074 [US1] In `sb/Leaflets/SongBlock.cs` add `LeadingBlankLines` (always 1, stored outside
+  `Lines`, not part of `HeightInLines`; data-model.md `SongBlock`) (depends on T071).
+- [X] T075 [US1] In `sb/Leaflets/ColumnBalancer.cs` update `Fill` to add `LeadingBlankLines` to a song's
+  height only when the song is not first in its column, and `Render` to emit `\mbox{}\` for it only
+  then; continuation chunks get none (depends on T074; make T071 pass).
+- [X] T076 [US1] In `sb/Leaflets/LeafletBuilder.cs` `RenderSongBlock`: trim leading/trailing blank input
+  lines before the loop; emit interior blank lines as `\mbox{}\` (single entry) instead of `"\n"`;
+  update the method's doc comment (supersedes the two-blank-source-lines explanation) (make T070(a)(b) pass).
+- [X] T077 [US1] In `sb/Leaflets/LeafletBuilder.cs`: set `MultiColumnMaxWidth` to 41 (committed value is
+  50 — confirm the working tree first), emit `\raggedright` for lyrics, and prefix each chapter file with
+  `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}` ahead of `\chapter*{...}` (depends on T076; make
+  T070(c)(d), T072 and T073 pass).
+- [X] T078 [P] [US1] Update `sb/specification.md` (product spec) to match: title gap, blank-line
+  trimming, `\mbox{}\` for blank lyric lines, 41-char width, ragged right.
+- [X] T079 [US1] Run `dotnet build` (no new warnings) and `dotnet test` — full suite green; compile a
+  generated leaflet from fixture songs with LaTeX if available and confirm no stretched lines, no
+  double gaps, no empty page (depends on T070-T078).
+
+**Checkpoint**: one explicit blank line above non-column-leading titles; leading/trailing blank lyric
+lines ignored; blank lyric lines are `\mbox{}\`; lyrics ragged right at 41 columns; chapter files
+self-contained for title spacing.
 
 ---
 

@@ -24,6 +24,10 @@ public static class ColumnBalancer
     private const string RightWidth = ".45\\textwidth";
     private const string Gutter = "0.075\\textwidth";
 
+    /// <summary>A minipage resets the surrounding `\raggedright` (it restores `\rightskip`), so each
+    /// one sets it again itself — lyrics are never justified (FR-004).</summary>
+    private const string Ragged = "\\raggedright\n";
+
     public static PageLayout Fill(IReadOnlyList<SongBlock> songBlocks, PageMetrics pageMetrics, int startingPageNumber, int firstPageReservedLines = 0)
     {
         var linesPerPage = pageMetrics.LinesPerPage;
@@ -65,6 +69,12 @@ public static class ColumnBalancer
                 FinishColumn();
         }
 
+        void AddBlankLines(int count)
+        {
+            for (var i = 0; i < count; i++)
+                currentLines.Add(SongBlock.BlankLine);
+        }
+
         void PlaceBlock(SongBlock block)
         {
             // A song that fits a full column but not this (heading-reduced) one is never split
@@ -79,16 +89,32 @@ public static class ColumnBalancer
             if (block.HeightInLines <= ColumnCapacity())
             {
                 // Whole-song placement: move to a fresh column if it doesn't fit in what's left —
-                // never split a song that could fit entirely in an empty column.
-                if (currentLines.Count + block.HeightInLines > ColumnCapacity())
+                // never split a song that could fit entirely in an empty column. The blank line
+                // above the title (FR-027) counts toward the fit, but only when the song isn't
+                // first in its column.
+                var gap = currentLines.Count > 0 ? block.LeadingBlankLines : 0;
+                if (currentLines.Count + gap + block.HeightInLines > ColumnCapacity())
+                {
                     FinishColumn();
+                    gap = 0;
+                }
 
+                AddBlankLines(gap);
                 currentLines.AddRange(block.Lines);
                 return;
             }
 
             // Over-long song: chunk across as many columns as needed, filling whatever's left in
-            // the current column first, then continuing through full columns.
+            // the current column first, then continuing through full columns. A gap that would
+            // leave the title with no room beneath it is skipped by starting a fresh column.
+            if (currentLines.Count > 0)
+            {
+                if (ColumnCapacity() - currentLines.Count <= block.LeadingBlankLines)
+                    FinishColumn();
+                else
+                    AddBlankLines(block.LeadingBlankLines);
+            }
+
             var remaining = block.Lines;
             while (remaining.Count > 0)
             {
@@ -155,12 +181,14 @@ public static class ColumnBalancer
         var rightVspace = heightDifference > 0 ? BuildVspace(heightDifference) : string.Empty;
 
         return
-            $"\\noindent\n\\begin{{minipage}}[t]{{{leftWidth}}}\n{string.Join("\n", left)}{leftVspace}\n\\end{{minipage}}%\n" +
-            $"\\hspace{{{Gutter}}}\n\\noindent\n\\begin{{minipage}}[t]{{{rightWidth}}}\n{string.Join("\n", right)}{rightVspace}\n\\end{{minipage}}\n";
+            $"\\noindent\n\\begin{{minipage}}[t]{{{leftWidth}}}\n{Ragged}{string.Join("\n", left)}{leftVspace}\n\\end{{minipage}}%\n" +
+            $"\\hspace{{{Gutter}}}\n\\noindent\n\\begin{{minipage}}[t]{{{rightWidth}}}\n{Ragged}{string.Join("\n", right)}{rightVspace}\n\\end{{minipage}}\n";
     }
 
+    /// <summary>Full-width page with no sibling column: ragged right inside its own group (a
+    /// bare `\raggedright` would leak into the following rows' paragraphs).</summary>
     private static string RenderSingleColumn(Column column) =>
-        $"\\noindent\n{string.Join("\n", column.Lines)}\n";
+        $"\\noindent\\begingroup\\raggedright\n{string.Join("\n", column.Lines)}\n\\par\\endgroup\n";
 
     /// <summary>A lone minipage with no sibling on the same row. <paramref name="precedingOffsetWidth"/>
     /// is the sibling column's own width — non-null exactly when this lone box is the RIGHT
@@ -172,7 +200,7 @@ public static class ColumnBalancer
     private static string RenderLoneMinipage(IReadOnlyList<string> lines, string width, string? precedingOffsetWidth)
     {
         var offset = precedingOffsetWidth is null ? "" : $"\\hspace{{{precedingOffsetWidth}}}\\hspace{{{Gutter}}}";
-        return $"\\noindent{offset}\n\\begin{{minipage}}[t]{{{width}}}\n{string.Join("\n", lines)}\n\\end{{minipage}}\n";
+        return $"\\noindent{offset}\n\\begin{{minipage}}[t]{{{width}}}\n{Ragged}{string.Join("\n", lines)}\n\\end{{minipage}}\n";
     }
 
     private static string BuildVspace(int lineCount) => $"\n\\vspace{{{lineCount}\\baselineskip}}";

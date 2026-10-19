@@ -86,8 +86,10 @@ public static class SongOrderer
         if (!string.IsNullOrWhiteSpace(song.Melody))
             lines++;
 
-        foreach (var rawLine in song.Text.Replace("\r\n", "\n").Split('\n'))
-            lines++;
+        // Leading/trailing blank lines are ignored by the builder (FR-003), so they add no height.
+        var text = song.Text.Replace("\r\n", "\n").Trim();
+        if (text.Length > 0)
+            lines += text.Split('\n').Length;
 
         return lines;
     }

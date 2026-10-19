@@ -219,6 +219,36 @@
   handling — it simply spans as many pages as it needs, following the existing long-song rules
   (FR-025, Edge Cases). Because it is the longest song it is placed first among the remaining
   songs; whatever space is left on its final page is then filled by First Fit Descending as usual.
+- Q: Some song titles render with no blank line above them, because the template's `\titlespacing`
+  doesn't apply reliably inside the column minipages. Should the space be emitted explicitly, and
+  should a title at the very top of a column/page also get it? → A: Yes, emit it explicitly — every
+  song title has exactly one blank line (one `\baselineskip`) above it, written into the generated
+  `.tex` rather than relying on `\titlespacing`. Exception: a title that is the first thing in its
+  column gets no blank line, so column tops stay aligned with the template's top margin (FR-005).
+  New FR-027; FR-026's capacity math counts this line wherever it is emitted.
+- Q: Some songs show too much space above them because blank lines at the start or end of a song's
+  text add empty output lines the layout's height accounting doesn't count. Should those be kept? →
+  A: No — leading and trailing blank lines (empty or whitespace-only) in a song's text are ignored
+  entirely: they produce no output line and count toward no height. Blank lines *between* text
+  lines remain preserved as stanza separators (2026-09-26 Clarification, unchanged). This keeps
+  FR-027's "exactly one blank line above a title" true and keeps rendered height equal to counted
+  height (FR-026). FR-003 and the blank-line Edge Case are amended.
+- Q: Documents created from an older `template-main.tex` still carry the old `\titlespacing` in
+  their main `.tex`, which stacks with FR-027's explicit blank line and produces double gaps and an
+  empty page. How should this be handled? → A: Each generated chapter file MUST itself set the
+  title spacing to zero (so the main `.tex`'s value, old or new, has no effect on song titles),
+  rather than depending on what the main file's template version contains. Existing documents are
+  not migrated or rewritten at build time beyond the chapter files SB already regenerates. FR-027
+  amended.
+- Q: Some lyric lines render with visibly stretched word spacing: a 43-character line is wider than
+  the column, so LaTeX wraps it and justifies the wrapped text. How should this be fixed? → A: Two
+  changes. (1) The planned maximum line width used for FR-004's wrapping decision is lowered to 41
+  characters, so SB's own planning wraps before LaTeX would overflow. (2) Lyrics are set ragged
+  right, so any remaining LaTeX wrap never stretches spaces. Because `\\` under `\raggedright` ends
+  the paragraph, a blank lyric line emitted as a bare `\\` fails with "There's no line here to
+  end"; blank lyric lines (including the stanza separators of the 2026-09-26 Clarification) MUST
+  instead be emitted as `\mbox{}\\`. FR-004 and the blank-line Edge Case are amended; this
+  supersedes the "two blank source lines" emission mechanism recorded in that earlier bullet.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -356,7 +386,10 @@ singing-order number in both outputs.
   breaking the document or altering meaning.
 - What happens when a song's text contains a blank line (e.g. a stanza separator)? *(2026-09-26
   Clarification)* The system MUST render it as a completely blank visual line in the output,
-  rather than silently dropping it.
+  rather than silently dropping it. *(2026-10-19 Clarification)* This applies only to blank lines
+  between text lines; blank lines at the start or end of a song's text MUST be ignored (FR-003).
+  Each such blank lyric line MUST be emitted as `\mbox{}\\` (a bare `\\` is invalid under
+  `\raggedright`).
 - What happens when a single song is too long to fit on one page in the chosen layout?
   *(revised — see Clarifications, 2026-09-27)* In single-column layout, the system MUST continue
   the song onto the next page. In multi-column layout, the rule depends on which page the song
@@ -365,6 +398,9 @@ singing-order number in both outputs.
   column flow (never a full-width override of the column grid) — see FR-025; if it starts on an
   ODD page, the song MAY simply continue onto the next page. In all cases, if the song still
   doesn't fit after this, it continues onto subsequent pages rather than failing or being clipped.
+- What happens when a song title follows another song's last line in the same column? *(2026-10-19
+  Clarification)* Exactly one blank line MUST separate them (FR-027); a title at the top of a
+  column gets none.
 - What happens when two songs are otherwise identical in space usage during space-efficient
   ordering? The system MUST produce a consistent, deterministic ordering rather than an
   arbitrary one that changes between runs.
@@ -401,9 +437,13 @@ singing-order number in both outputs.
 - **FR-003** *(revised — see Clarifications)*: System MUST preserve each line of a song's input
   text as its own output line — trusting the user's own line breaks — rather than merging lines
   together or splitting a line at internal punctuation, whenever the column width allows it.
+  Blank lines at the very start or end of a song's text (empty or whitespace-only) MUST be
+  ignored, producing no output line and no counted height *(2026-10-19 Clarification)*.
 - **FR-004**: System MUST break a line across multiple output lines when it does not fit within
   the available column width, instead of truncating or overflowing it — the only case where the
-  system introduces a line break the user didn't write.
+  system introduces a line break the user didn't write. The planned maximum line width is 41
+  characters, and lyrics MUST be set ragged right so no line is ever stretched to fill the column
+  *(2026-10-19 Clarification)*.
 - **FR-005** *(revised by user, 2026-09-28 — see Clarifications)*: System MUST vertically align
   columns in multi-column layouts so that all columns on a page start at approximately the same
   height. Columns ending at approximately the same line is explicitly NOT required — a column may
@@ -484,7 +524,15 @@ singing-order number in both outputs.
   document's LaTeX template (`template-main.tex`) at build time, rather than from an
   independently maintained configuration value, so pagination decisions (FR-025) stay consistent
   with the template actually used to render the output. (FR-004's line-*width* wrapping is
-  unaffected — it depends on column width, not this vertical/height capacity.)
+  unaffected — it depends on column width, not this vertical/height capacity.) Capacity MUST
+  include the blank line FR-027 places above each non-column-leading title.
+- **FR-027** *(added — see Clarifications, 2026-10-19)*: System MUST emit exactly one blank line
+  (one `\baselineskip`) above every song title explicitly in the generated LaTeX, not relying on
+  the template's `\titlespacing`, which is unreliable inside column minipages. A title that is the
+  first content in its column MUST NOT receive this blank line. A song continuing from a previous
+  column/page has no title and is unaffected. To keep this exact regardless of the document's
+  template version, every generated chapter file MUST set the title spacing to zero itself,
+  overriding any `\titlespacing` in the main `.tex` *(2026-10-19 Clarification)*.
 
 ### Key Entities
 
@@ -522,9 +570,10 @@ singing-order number in both outputs.
 
 - **SC-001**: A user can go from a set of plain-text songs to a finished, ready-to-render
   leaflet without writing or editing any layout markup themselves.
-- **SC-002** *(revised — see Clarifications)*: For real-world song text, at least 95% of the
+- **SC-002** *(revised — see Clarifications)*: For real-world song text, at least 90% of the
   user's own input lines fit within one output line without needing to be wrapped, even at the
-  narrower multi-column width — confirming that trusting the user's line breaks (rather than
+  narrower 41-character multi-column width *(2026-10-19: relaxed from 95%, which held at the
+  former 50-character width)* — confirming that trusting the user's line breaks (rather than
   algorithmic phrase-splitting) still produces a readable layout in practice.
 - ~~**SC-003**~~ *(removed — see Clarifications, 2026-09-28)*: Previously required columns to end
   within one text line's height of each other in at least 95% of generated pages. Dropped because

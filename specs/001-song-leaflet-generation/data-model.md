@@ -269,6 +269,7 @@ content" are no longer the same thing.
 | Field           | Type          | Notes |
 |-----------------|---------------|-------|
 | Lines           | `string[]`    | This song's formatted output lines (title, optional melody attribution, lyric lines) — unchanged from the pre-2026-09-27 `Column`'s `Lines`. |
+| LeadingBlankLines | int         | **Added 2026-10-19 (FR-027).** Always 1: the blank line above the song's title. Not part of `Lines`/`HeightInLines`; `ColumnBalancer.Fill` adds it to the song's height only when the song is not first in its column, and `Render` emits it (`\mbox{}\\`) only then (research.md §17). |
 | HeightInLines   | int           | `Lines.Length` — compared against `PageMetrics.LinesPerPage` to decide whether this song fits in the column-fill algorithm's current column or must be chunked (research.md §5/§15, FR-025/FR-026). |
 | ~~TitleLineCount~~  | int       | **Added 2026-09-27, reverted — does not exist on the shipped `SongBlock` (superseded 2026-09-28).** Was: how many of `Lines`' leading entries are this song's title/melody attribution (1, or 2 when a melody is present), added after discovering `sb/Tests/TestFiles/TeX/test.tex`/`Kottar i karburatorn.tex` render a song's title separate from its lyrics (research.md §5 addendum). The title/lyrics-separation design this field supported was implemented, then reverted by direct instruction — see research.md §5's superseded note and `contracts/latex-output-contract.md`'s revised "Title/lyrics rendering" bullet. |
 

@@ -95,7 +95,7 @@ public class LeafletBuilderTests
     }
 
     [Test]
-    public void Build_RendersABlankInputLine_AsTwoBlankOutputLines_AfterTheLineBreak()
+    public void Build_RendersAnInteriorBlankInputLine_AsOneMboxLine_AndNeverABareLineBreak()
     {
         var songs = new[] { new Song("Song", "first stanza\n\nsecond stanza", singingOrderNumber: 1) };
         var request = new LeafletRequest("Test", OneChapter(songs), LeafletFormat.SingleColumn, OrderingMode.AsListed);
@@ -105,9 +105,72 @@ public class LeafletBuilderTests
 
         var firstStanzaIndex = Array.IndexOf(lines, "first stanza\\\\");
         Assert.That(firstStanzaIndex, Is.GreaterThanOrEqualTo(0));
-        Assert.That(lines[firstStanzaIndex + 1], Is.Empty);
-        Assert.That(lines[firstStanzaIndex + 2], Is.Empty);
-        Assert.That(lines[firstStanzaIndex + 3], Is.EqualTo("second stanza\\\\"));
+        Assert.That(lines[firstStanzaIndex + 1], Is.EqualTo("\\mbox{}\\\\"));
+        Assert.That(lines[firstStanzaIndex + 2], Is.EqualTo("second stanza\\\\"));
+        Assert.That(lines, Has.None.EqualTo("\\\\"));
+    }
+
+    [Test]
+    public void Build_IgnoresLeadingAndTrailingBlankLines_OfASongsText()
+    {
+        var padded = new Song("Same", "\n  \nonly line\n\n \n", singingOrderNumber: 1);
+        var plain = new Song("Same", "only line", singingOrderNumber: 1);
+
+        string Lyrics(Song song) => LeafletBuilder
+            .Build(new LeafletRequest("Test", OneChapter(song), LeafletFormat.SingleColumn, OrderingMode.AsListed))
+            .ChapterFiles.Single().Content;
+
+        Assert.That(Lyrics(padded), Is.EqualTo(Lyrics(plain)));
+        Assert.That(Lyrics(padded).Split('\n'), Has.None.EqualTo("\\mbox{}\\\\"));
+    }
+
+    [Test]
+    public void Build_KeepsTheLineBreakOutsideTheRunInTitleArgument()
+    {
+        // Regression (C:\Test\loop-test.log): titlesec sets a run-in title in an \sbox (LR mode),
+        // where `\\` raises "Not allowed in LR mode" once lyrics are \raggedright.
+        var songs = new[] { new Song("Albins barn", "line", singingOrderNumber: 1) };
+        var request = new LeafletRequest("Test", OneChapter(songs), LeafletFormat.MultiColumn, OrderingMode.AsListed);
+
+        var content = LeafletBuilder.Build(request).ChapterFiles.Single().Content;
+
+        Assert.That(content, Does.Contain("\\paragraph*{1. Albins barn}\\mbox{}\\\\"));
+        Assert.That(content, Does.Not.Contain("barn\\\\}"));
+    }
+
+    [Test]
+    public void Build_StartsEveryChapterFileWithZeroTitleSpacing_AndRaggedRightLyrics()
+    {
+        var songs = new[] { new Song("Song", "line", singingOrderNumber: 1) };
+        var request = new LeafletRequest("Test", OneChapter(songs), LeafletFormat.SingleColumn, OrderingMode.AsListed);
+
+        var content = LeafletBuilder.Build(request).ChapterFiles.Single().Content;
+
+        Assert.That(content, Does.StartWith("\\titlespacing*{\\paragraph}{0pt}{0pt}{0pt}"));
+        // Regression (compiled C:\Test document): a chapter-level \raggedright makes the minipage
+        // rows overflow their pages, so it must only appear inside a group, after the heading.
+        Assert.That(content.IndexOf("\\raggedright", StringComparison.Ordinal),
+            Is.GreaterThan(content.IndexOf("\\chapter*", StringComparison.Ordinal)));
+        Assert.That(content, Does.Contain("\\begingroup\\raggedright"));
+        Assert.That(content, Does.EndWith("\\par\\endgroup"));
+    }
+
+    [Test]
+    public void Build_MultiColumn_PutsOneBlankLineAboveANonLeadingTitle_ButNotAboveAColumnLeadingOne()
+    {
+        var songs = new[]
+        {
+            new Song("First", "a", singingOrderNumber: 1),
+            new Song("Second", "b", singingOrderNumber: 2)
+        };
+        var request = new LeafletRequest("Test", OneChapter(songs), LeafletFormat.MultiColumn, OrderingMode.AsListed);
+
+        var lines = LeafletBuilder.Build(request).ChapterFiles.Single().Content.Split('\n');
+
+        var second = Array.FindIndex(lines, l => l.Contains("2. Second"));
+        Assert.That(lines[second - 1], Is.EqualTo("\\mbox{}\\\\"));
+        var first = Array.FindIndex(lines, l => l.Contains("1. First"));
+        Assert.That(lines[first - 1], Does.Not.Contain("\\mbox{}"));
     }
 
 
@@ -270,10 +333,10 @@ public class LeafletBuilderTests
 
         Assert.That(leaflet.ChapterFiles, Has.Exactly(2).Items);
         Assert.That(leaflet.ChapterFiles[0].ChapterName, Is.EqualTo("first"));
-        Assert.That(leaflet.ChapterFiles[0].Content, Does.StartWith("\\chapter*{First Chapter}"));
+        Assert.That(leaflet.ChapterFiles[0].Content, Does.Contain("\\chapter*{First Chapter}"));
         Assert.That(leaflet.ChapterFiles[0].Content, Does.Contain("lyrics a"));
         Assert.That(leaflet.ChapterFiles[1].ChapterName, Is.EqualTo("second"));
-        Assert.That(leaflet.ChapterFiles[1].Content, Does.StartWith("\\chapter*{Second Chapter}"));
+        Assert.That(leaflet.ChapterFiles[1].Content, Does.Contain("\\chapter*{Second Chapter}"));
         Assert.That(leaflet.ChapterFiles[1].Content, Does.Contain("lyrics b"));
 
         Assert.That(leaflet.Document, Does.Contain("\\input{Chapters/first/chapter.tex}"));
@@ -291,7 +354,7 @@ public class LeafletBuilderTests
 
         var leaflet = LeafletBuilder.Build(request);
 
-        Assert.That(leaflet.ChapterFiles.Single().Content, Does.StartWith("\\chapter*{main}"));
+        Assert.That(leaflet.ChapterFiles.Single().Content, Does.Contain("\\chapter*{main}"));
     }
 
     [Test]

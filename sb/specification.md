@@ -30,7 +30,15 @@ primary mechanism for using available space.
 SB does not try to detect musical phrasing. The user's own line breaks are trusted as-is: one
 input line becomes one output line. The only exception is a line too wide for the column
 (especially likely in multi-column leaflets, since space is limited), which is broken across
-multiple output lines rather than overflowing or being truncated.
+multiple output lines rather than overflowing or being truncated. The planned maximum line width
+in multi-column leaflets is 41 characters, and lyrics are set ragged right so a wrapped line is
+never stretched across the column.
+
+Blank lines at the start or end of a song's text are ignored. A blank line between text lines is
+kept as one empty line (emitted as `\mbox{}\\`, since a bare `\\` is invalid under `\raggedright`).
+Exactly one blank line is placed above every song title, except one that starts a column; each
+chapter file sets its own title spacing to zero so the main `.tex` template's `\titlespacing` can't
+add a second gap.
 
 
 

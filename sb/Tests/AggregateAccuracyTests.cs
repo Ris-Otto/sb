@@ -5,7 +5,7 @@ using sb.Leaflets;
 namespace sb.Tests;
 
 /// <summary>
-/// Validates SC-002 and SC-003's ≥95% thresholds in aggregate across every real fixture under
+/// Validates SC-002 (≥90%, relaxed 2026-10-19 for the 41-character width) and SC-003 (≥95%) thresholds in aggregate across every real fixture under
 /// Tests/TestFiles/, rather than only the individual cases already covered by
 /// ColumnBalancerTests (per the 2026-09-11 /speckit-analyze remediation, C2). SC-002 was revised
 /// 2026-09-26 (phrase-splitting removed — see spec.md's Clarifications) to measure how often a
@@ -14,7 +14,7 @@ namespace sb.Tests;
 [TestFixture]
 public class AggregateAccuracyTests
 {
-    private const int MultiColumnMaxWidth = 50;
+    private const int MultiColumnMaxWidth = 41;
 
     private static IEnumerable<string> AllFixtureFiles() =>
         Directory.GetFiles(TestFixtures.Path(), "*.txt");
@@ -40,7 +40,7 @@ public class AggregateAccuracyTests
 
         Assert.That(totalLines, Is.GreaterThan(0), "expected at least one real fixture to be present");
         var fraction = (double)linesNeedingNoWrap / totalLines;
-        Assert.That(fraction, Is.GreaterThanOrEqualTo(0.95),
+        Assert.That(fraction, Is.GreaterThanOrEqualTo(0.90),
             $"only {linesNeedingNoWrap}/{totalLines} ({fraction:P0}) of real input lines fit one line at width {MultiColumnMaxWidth}");
     }
 

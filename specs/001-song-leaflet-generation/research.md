@@ -148,6 +148,16 @@ blank physical lines in the generated `.tex` source.
   keeping the rule simple and its effect linear in the number of blank lines (Constitution
   Principle II, YAGNI).
 
+**2026-10-19 addendum — blank lines superseded**: (a) Blank lines at the start/end of a song's text
+are trimmed and never rendered (FR-003). (b) Interior blank lines are now emitted as `\mbox{}\\`
+(one entry = one rendered line, so `HeightInLines` is unchanged), replacing the "two blank source
+lines" mechanism above. Reason: lyrics are now `\raggedright`, under which a bare `\\` ends the
+paragraph and fails with "There's no line here to end"; `\mbox{}` gives the line break something
+to end. (c) Planned multi-column max width is lowered to 41 characters (committed constant: 50)
+and lyrics are `\raggedright`, so a line LaTeX still has to wrap is never justified/stretched
+(FR-004). Alternatives rejected: keep justified text and only shrink width (still stretches any
+wrapped line); a `\vspace` per blank line (unchanged rejection above).
+
 ## 4. Space-efficient ordering algorithm
 
 **Decision (revised 2026-10-19 — `/speckit-clarify`, direct user requirement)**: First Fit
@@ -813,3 +823,22 @@ not the algorithm. Three fixes:
    `ColumnBalancer.Fill(..., firstPageReservedLines)`; `SongOrderer` simulates with the same
    reservation. A song that fits a full column but not the heading-reduced one moves to the next
    column unless its column is still empty, in which case it is split like any over-long song.
+
+## 17. Song-title gap (FR-027) and per-chapter title spacing
+
+**Decision (2026-10-19)**: Exactly one blank line above every song title is emitted explicitly,
+not via `\titlespacing`. `SongBlock.LeadingBlankLines` (= 1) is stored outside `Lines`;
+`ColumnBalancer.Fill` adds it to a song's height only when the song is not first in its column, and
+`Render` emits `\mbox{}\` for it only then. Every chapter file begins with
+`\titlespacing*{\paragraph}{0pt}{0pt}{0pt}` so a main `.tex` from an older template (which still
+carries its own `\titlespacing`) cannot add a second gap or push content onto an empty page.
+Existing documents are not migrated; chapter files are regenerated on every build anyway.
+
+**Rationale**: `\titlespacing` is unreliable inside column minipages; an explicit line is countable
+by FR-026's capacity math. Column-leading titles skip the line so column tops stay at the
+template's top margin (FR-005). Zeroing inside the chapter file removes dependence on template
+version.
+
+**Alternatives considered**: rewriting old main files at build time (rejected — each chapter file
+sets it itself); `\vspace{\baselineskip}` for the gap (rejected — `\mbox{}\` already matches the
+blank-lyric mechanism and counts as exactly one line).

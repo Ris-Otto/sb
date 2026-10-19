@@ -74,10 +74,11 @@ public class SongOrdererTests
     [Test]
     public void Order_SpaceEfficient_FillsARemainingGapWithTheLongestSongThatStillFits()
     {
-        // Heights: X=6, Y=6, Z=4, W=3 (X/Y tie, so input order puts Y first). Page 1: Y (left), X (right), then Z — the
-        // longest remaining song that still fits the right column's last 4 lines. W (3) is left
-        // for page 2: nothing is left on page 1 once Z has filled the right column.
-        var songs = new[] { MakeSong("W", 2), MakeSong("Z", 3), MakeSong("Y", 5), MakeSong("X", 5) };
+        // Heights: X=6, Y=6, Z=3, W=2 (X/Y tie, so input order puts Y first). Page 1: Y (left), X
+        // (right), then Z — the longest remaining song that still fits the right column's last 4
+        // lines once its blank line above the title (FR-027) is counted: 6 + 1 + 3 = 10. W (2) is
+        // left for page 2: nothing is left on page 1 once Z has filled the right column.
+        var songs = new[] { MakeSong("W", 1), MakeSong("Z", 2), MakeSong("Y", 5), MakeSong("X", 5) };
 
         Assert.That(SpaceEfficientTitles(songs, 10), Is.EqualTo(new[] { "Y", "X", "Z", "W" }));
     }
@@ -109,11 +110,12 @@ public class SongOrdererTests
     [Test]
     public void Order_SpaceEfficient_AccountsForTheChapterHeading_OnThePageItStartsOn()
     {
-        // linesPerPage=10 with a 4-line heading => page 1's columns hold 6. Heights: A=10, B=10
+        // linesPerPage=10 with a 3-line heading => page 1's columns hold 7. Heights: A=10, B=10
         // (B listed first, so it wins the tie), D=2. B spills across page 1's two columns
-        // (6 + 4); A would then spill past page 1, so it cannot join B there, but D fits the
-        // 2 lines left. Without the heading A and B would each fill a whole 10-line column.
-        var metrics = new PageMetrics(paperHeightPt: 100, topMarginPt: 0, bottomMarginPt: 0, baselineSkipPt: 10, chapterHeadingLines: 4);
+        // (7 + 3); A would then spill past page 1, so it cannot join B there, but D fits the
+        // 4 lines left (3 + 1 blank line above its title + 2 = 6 <= 7). Without the heading A and
+        // B would each fill a whole 10-line column.
+        var metrics = new PageMetrics(paperHeightPt: 100, topMarginPt: 0, bottomMarginPt: 0, baselineSkipPt: 10, chapterHeadingLines: 3);
         var songs = new[] { MakeSong("D", 1), MakeSong("B", 9), MakeSong("A", 9) };
 
         var ordered = SongOrderer.Order(songs, OrderingMode.SpaceEfficient, metrics);

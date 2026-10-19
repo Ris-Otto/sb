@@ -47,10 +47,11 @@ public class ColumnBalancerTests
 
         Assert.That(layout.Pages, Has.Count.EqualTo(1));
         var (left, right) = layout.Pages[0];
-        // The first two 4-line songs (8 <= 10) stack together into the left column; the third
-        // (would make 12 > 10) moves to the right column — proving a column is NOT capped at one
-        // song (`/speckit-analyze` finding U1).
-        Assert.That(left.HeightInLines, Is.EqualTo(8));
+        // The first two 4-line songs (4 + 1 gap + 4 = 9 <= 10) stack together into the left
+        // column; the third (would make 14 > 10) moves to the right column, where it is
+        // column-leading and gets no gap — proving a column is NOT capped at one song
+        // (`/speckit-analyze` finding U1).
+        Assert.That(left.HeightInLines, Is.EqualTo(9));
         Assert.That(right, Is.Not.Null);
         Assert.That(right!.HeightInLines, Is.EqualTo(4));
     }
@@ -140,13 +141,55 @@ public class ColumnBalancerTests
         // Finding U1: a page/column is never reserved exclusively for one song.
         var metrics = SmallPageMetrics(5);
         var longSong = Block(6); // exceeds 5 => chunks: page1 left+right (5+1)
-        var nextSong = Block(4); // should fill the remaining space right after the long song's last chunk
+        var nextSong = Block(3); // should fill the remaining space right after the long song's last chunk
 
         var layout = ColumnBalancer.Fill(new[] { longSong, nextSong }, metrics, startingPageNumber: 1);
 
         Assert.That(layout.Pages, Has.Count.EqualTo(1));
         Assert.That(layout.Pages[0].Left.HeightInLines, Is.EqualTo(5));
-        Assert.That(layout.Pages[0].Right!.HeightInLines, Is.EqualTo(5)); // 1 (long song's tail) + 4 (next song)
+        Assert.That(layout.Pages[0].Right!.HeightInLines, Is.EqualTo(5)); // 1 (long song's tail) + 1 gap + 3 (next song)
+    }
+
+    [Test]
+    public void Fill_PutsOneBlankLineAboveASongThatIsNotFirstInItsColumn()
+    {
+        var layout = ColumnBalancer.Fill(new[] { Block(2), Block(2) }, SmallPageMetrics(10), startingPageNumber: 1);
+
+        var left = layout.Pages[0].Left;
+        Assert.That(left.Lines, Is.EqualTo(new[] { "line 1\\\\", "line 2\\\\", SongBlock.BlankLine, "line 1\\\\", "line 2\\\\" }));
+    }
+
+    [Test]
+    public void Fill_AddsNoBlankLine_AboveAColumnLeadingSong_OrAContinuationChunk()
+    {
+        // cap 3: A(3) fills the left column; B(5) starts the right column (no gap) and its tail
+        // continues on page 2 (a continuation chunk has no title, so no gap either).
+        var layout = ColumnBalancer.Fill(new[] { Block(3), Block(5) }, SmallPageMetrics(3), startingPageNumber: 1);
+
+        Assert.That(layout.Pages[0].Right!.Lines[0], Is.EqualTo("line 1\\\\"));
+        Assert.That(layout.Pages[1].Left.Lines[0], Is.EqualTo("line 4\\\\"));
+    }
+
+    [Test]
+    public void Fill_CountsTheBlankLine_WhenDecidingWhetherASongStillFitsTheColumn()
+    {
+        // 4 + 1 gap + 5 = 10 fits exactly; one more line (6) would not.
+        var fits = ColumnBalancer.Fill(new[] { Block(4), Block(5) }, SmallPageMetrics(10), startingPageNumber: 1);
+        var overflows = ColumnBalancer.Fill(new[] { Block(4), Block(6) }, SmallPageMetrics(10), startingPageNumber: 1);
+
+        Assert.That(fits.Pages[0].Right, Is.Null);
+        Assert.That(overflows.Pages[0].Right, Is.Not.Null);
+    }
+
+    [Test]
+    public void Render_StartsEveryMinipageWithRaggedRight()
+    {
+        var layout = ColumnBalancer.Fill(new[] { Block(3), Block(3) }, SmallPageMetrics(3), startingPageNumber: 1);
+
+        var result = ColumnBalancer.Render(layout);
+
+        Assert.That(result, Does.Contain("\\begin{minipage}[t]{.475\\textwidth}\n\\raggedright\n"));
+        Assert.That(result, Does.Contain("\\begin{minipage}[t]{.45\\textwidth}\n\\raggedright\n"));
     }
 
     [Test]

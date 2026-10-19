@@ -18,7 +18,15 @@ namespace sb.Leaflets;
 public static class LeafletBuilder
 {
     private const int SingleColumnMaxWidth = 100;
-    private const int MultiColumnMaxWidth = 50;
+    private const int MultiColumnMaxWidth = 41;
+
+    /// <summary>Every chapter file zeroes the title spacing itself, so a main `.tex` from an older
+    /// template (which still carries its own `\titlespacing`) can't stack a second gap on top of
+    /// the explicit one (FR-027). `\raggedright` is deliberately NOT set here: at chapter level it
+    /// leaks into the paragraphs that hold the side-by-side minipage rows and makes the compiled
+    /// pages overflow (verified against a real compile) — minipages and the single-column body
+    /// set it themselves instead, so a wrapped line is never stretched (FR-004).</summary>
+    private const string ChapterPreamble = "\\titlespacing*{\\paragraph}{0pt}{0pt}{0pt}\n";
 
     public static Leaflet Build(LeafletRequest request, string? templatePath = null)
     {
@@ -58,7 +66,7 @@ public static class LeafletBuilder
             }
 
             var chapterHeading = LatexEscaper.Escape(chapter.Title ?? chapter.Name);
-            chapterFiles.Add(new LeafletChapterFile(chapter.Name, $"\\chapter*{{{chapterHeading}}}\n{songContent}"));
+            chapterFiles.Add(new LeafletChapterFile(chapter.Name, $"{ChapterPreamble}\\chapter*{{{chapterHeading}}}\n{songContent}"));
             inputLines.Add($"\\input{{Chapters/{chapter.Name}/chapter.tex}}");
         }
 
@@ -73,32 +81,39 @@ public static class LeafletBuilder
     /// Trusts the user's own line breaks (FR-003, 2026-09-26 Clarification): each of the song's
     /// input lines becomes one output line as-is, wrapped further only if it's too wide for
     /// <paramref name="maxWidth"/> (FR-004) — the system never merges lines or splits one at
-    /// internal punctuation. A blank input line (e.g. a stanza separator) is rendered as a
-    /// completely empty visual line rather than dropped (2026-09-26 Clarification): in LaTeX, a
-    /// line break (`\\`) immediately followed by only one blank source line doesn't produce a
-    /// visible empty line (there's no paragraph gap to see yet) — it takes *two* blank source
-    /// lines after the `\\` to actually show one empty line. Each blank input line is therefore a
-    /// single entry ("\n", which the entries' newline-join expands to two blank source lines) so
-    /// that one entry always equals one rendered line for <see cref="SongBlock.HeightInLines"/>
-    /// and column packing.
+    /// internal punctuation. A blank input line between text lines (e.g. a stanza separator) is
+    /// rendered as one completely empty visual line rather than dropped (2026-09-26
+    /// Clarification), emitted as `\mbox{}\\` (2026-10-19): under `\raggedright` a bare `\\`
+    /// ends the paragraph and fails with "There's no line here to end". Each blank input line is
+    /// a single entry, so one entry always equals one rendered line for
+    /// <see cref="SongBlock.HeightInLines"/> and column packing. Blank lines at the start or end
+    /// of the song's text are ignored.
     /// </summary>
     private static SongBlock RenderSongBlock(PlacedSong placedSong, int maxWidth)
     {
         var song = placedSong.Song;
         var lines = new List<string>
         {
-            $"\\paragraph*{{{song.SingingOrderNumber}. {LatexEscaper.Escape(song.Title)}\\\\}}"
+            // The line break after the run-in title must sit outside the title argument: titlesec
+            // typesets it in an `\sbox` (LR mode), where `\\` errors under `\raggedright` ("Not
+            // allowed in LR mode"). `\mbox{}` starts the paragraph so the `\\` has a line to end.
+            $"\\paragraph*{{{song.SingingOrderNumber}. {LatexEscaper.Escape(song.Title)}}}\\mbox{{}}\\\\"
         };
 
         if (!string.IsNullOrWhiteSpace(song.Melody))
             lines.Add($"\\textit{{Mel: {LatexEscaper.Escape(song.Melody)}}}\\\\");
 
-        foreach (var rawLine in song.Text.Replace("\r\n", "\n").Split('\n'))
+        // Leading/trailing blank lines are ignored (FR-003, 2026-10-19): they would add rendered
+        // lines the height accounting doesn't expect.
+        var text = song.Text.Replace("\r\n", "\n").Trim();
+        var inputLines = text.Length == 0 ? Array.Empty<string>() : text.Split('\n');
+
+        foreach (var rawLine in inputLines)
         {
             var line = rawLine.Trim();
             if (line.Length == 0)
             {
-                lines.Add("\n");
+                lines.Add(SongBlock.BlankLine);
                 continue;
             }
 
@@ -111,5 +126,8 @@ public static class LeafletBuilder
     }
 
     private static string RenderSingleColumn(IReadOnlyList<SongBlock> blocks) =>
-        string.Join("\n\n", blocks.Select(block => string.Join("\n", block.Lines)));
+        $"\\begingroup\\raggedright\n{JoinSingleColumn(blocks)}\n\\par\\endgroup";
+
+    private static string JoinSingleColumn(IReadOnlyList<SongBlock> blocks) =>
+        string.Join($"\n\n{SongBlock.BlankLine}\n", blocks.Select(block => string.Join("\n", block.Lines)));
 }

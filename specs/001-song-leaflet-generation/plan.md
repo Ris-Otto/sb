@@ -419,3 +419,18 @@ option and (if unused elsewhere) the `PermutationsAndCombinations.cs` reuse are 
 Principles III/IV: `SongOrdererTests` and `LeafletBuilderTests` cases for the removed paths are
 replaced by failing FFD tests written first (longest-first placement, gap fill, over-long song,
 equal-length tie-break, final-page under-fill allowed). All five principles remain PASS.
+
+*Post-`/speckit-clarify` re-check (title gap, blank-line trimming, per-chapter title spacing,
+41-char width + ragged right + `\mbox{}\`, 2026-10-19)*: No new dependency or abstraction.
+(1) FR-027: `SongBlock` gains one small field, `LeadingBlankLines` (1), kept *outside* `Lines`;
+`ColumnBalancer.Fill` counts it only when the song is not first in its column and `Render` emits it
+only then (research.md §17). (2) `RenderSongBlock` trims leading/trailing blank input lines before
+rendering (FR-003). (3) Each chapter file is prefixed with `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}`
+(FR-027; research.md §17) so older documents' main `.tex` can't double the gap. (4)
+`MultiColumnMaxWidth` 50 → 41 in `LeafletBuilder` (the committed constant is 50, not the 43 the user
+cited — confirm the working tree before editing), lyrics set `\raggedright`, and blank lyric lines
+emit `\mbox{}\` instead of two blank source lines (research.md §3 addendum). All of these edit
+existing methods/constants in place (Principle II). Principle IV: failing tests first for each —
+leading/trailing blank trimming, gap above non-leading titles only, chapter-file prefix present,
+blank line renders as `\mbox{}\`, no bare `\` line. `AggregateAccuracyTests.MultiColumnMaxWidth`
+must change to 41 alongside the builder. All five principles remain PASS.

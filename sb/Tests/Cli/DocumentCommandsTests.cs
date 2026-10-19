@@ -158,7 +158,7 @@ public class DocumentCommandsTests
         var chapterTexPath = Path.Combine(document.Path, "Chapters", "main", "chapter.tex");
         Assert.That(File.Exists(chapterTexPath), Is.True);
         var chapterContent = File.ReadAllText(chapterTexPath);
-        Assert.That(chapterContent, Does.StartWith("\\chapter*{Main Chapter}"));
+        Assert.That(chapterContent, Does.Contain("\\chapter*{Main Chapter}"));
         Assert.That(chapterContent, Does.Contain("A Song"));
         Assert.That(chapterContent, Does.Contain("some lyrics"));
     }
