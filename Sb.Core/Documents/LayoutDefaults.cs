@@ -16,9 +16,9 @@ namespace Sb.Core.Documents;
 /// for 44;</item>
 /// <item>one line of safety is kept on both, because a lyric line that comes out wider than expected
 /// makes LaTeX wrap it, which the plan does not know about;</item>
-/// <item>a column is 259.05pt wide; of the lyrics measured (312 lines of real songs) none of the lines up
-/// to 44 characters overflowed it and the first that did was 45, and 5.96pt is the widest per-character
-/// width of the lines of 40–45 characters, which gives 43.</item>
+/// <item>a column is 259.05pt wide; of the lyrics measured (313 lines of real songs) the widest per-character
+/// width of the lines of 40–46 characters is 6.18pt (a 43-character line measured 261.9pt and overflowed, so
+/// 6.2pt is used, not the 5.96pt of the first measurement), which gives 41.</item>
 /// </list>
 /// Shared between <see cref="DocumentOperations"/> and <see cref="ChapterOperations"/> so both lay out
 /// content against the same assumed page geometry.
@@ -33,7 +33,7 @@ internal static class LayoutDefaults
 
     private const double ChapterHeadingPt = 135.72;
     private const double ColumnWidthPt = 259.05;
-    private const double WidestCharWidthPt = 5.96;
+    private const double WidestCharWidthPt = 6.2;
     private const int SafetyLines = 1;
 
     /// <summary>Lines that fit a column on every page except a chapter's first.</summary>

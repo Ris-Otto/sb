@@ -225,7 +225,7 @@ public class ChapterEmitterTests
         // `\\*` forbids a page break after the line; the last kept line and everything after allow one.
         string expected = string.Join(
             Environment.NewLine,
-            "\\paragraph*{1. T}\\mbox{}\\\\*", "Text: W\\\\*", "a\\\\*", "b\\\\", "\\\\", "c");
+            "\\paragraph*{1. T}\\mbox{}\\\\*", "Text: W\\\\*", "a\\\\*", "b\\\\", "\\mbox{}\\\\", "c");
         Assert.That(rendered, Does.Contain(expected));
     }
 
@@ -242,13 +242,36 @@ public class ChapterEmitterTests
     }
 
     [Test]
-    public void RenderSingleColumn_SongStartingWithAnEmptyLine_StillKeepsTheTitleWithTheNextLine()
+    public void RenderSingleColumn_BlankLinesAroundTheLyrics_AreDropped()
     {
-        Song song = Song.Create("T", ["", "a", "b"], 1).Value;
+        Song song = Song.Create("T", ["", "a", "b", "", " "], 1).Value;
 
         string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
 
-        Assert.That(rendered, Does.Contain("\\paragraph*{1. T}\\mbox{}\\\\*" + Environment.NewLine + "\\\\" + Environment.NewLine));
+        Assert.That(rendered, Does.Contain("\\paragraph*{1. T}\\mbox{}\\\\*" + Environment.NewLine + "a\\\\*" + Environment.NewLine + "b" + Environment.NewLine));
+    }
+
+    [Test]
+    public void RenderSingleColumn_PutsALineOfSpaceBeforeEachTitle()
+    {
+        Song song = Song.Create("T", ["a"], 1).Value;
+
+        string rendered = ChapterEmitter.RenderSingleColumn("Chapter", [song]);
+
+        Assert.That(rendered, Does.Contain("\\addvspace{1\\baselineskip}" + Environment.NewLine + "\\paragraph*{1. T}"));
+    }
+
+    [Test]
+    public void RenderMultiColumn_PutsALineOfSpaceBeforeEveryTitleButTheFirstInAColumn()
+    {
+        var a = SongFragment.Whole(MakeSong("A", "rad 1"), ColumnWidth);
+        var b = SongFragment.Whole(MakeSong("B", "rad 1"), ColumnWidth);
+        var page = new Page(1, [a, b], [], a.Height + b.Height, 0);
+
+        string rendered = ChapterEmitter.RenderMultiColumn("Chapter", [page], ColumnWidth);
+
+        Assert.That(CountOccurrences(rendered, "\\vspace{1\\baselineskip}" + Environment.NewLine + "\\paragraph*"), Is.EqualTo(1));
+        Assert.That(rendered, Does.Contain("\\begin{minipage}[t]{0.48\\textwidth}\\raggedright" + Environment.NewLine + "\\paragraph*{"));
     }
 
     [Test]

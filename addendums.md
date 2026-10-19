@@ -370,3 +370,43 @@ new FR-1.12.17 and FR-1.12.18. `specification.md`: §4.1 (planning numbers), §4
 **Tests.** New `LayoutDefaultsTests` (the derived numbers, and that the template still has the geometry), a first-page
 test for each paginator, emitter tests for "no line break after the last line"; the existing layout tests were
 adjusted for the 2-line header.
+
+## A-13: Song spacing in the PDF (`issues.txt`)
+
+**Problem.** Some songs started directly after the previous one, others very far after it.
+1. `\titlespacing` (A-12) was not applied reliably to a `\paragraph*` inside a minipage: in the `vibe-test` output
+   the space was missing before some titles (e.g. in the left column) and present before others.
+2. Blank lines at the start or end of a song's text became empty lines in the output (a trailing `\\` plus an empty
+   line), so the song was followed by extra space that the plan did not count.
+
+**Fix.**
+- `template-main.tex`: `\titlespacing*{\paragraph}{0pt}{0pt}{0pt}`. The line of space before a title is now emitted by
+  `ChapterEmitter`: `\vspace{1\baselineskip}` before every titled fragment that is not first in its column
+  (multi-column), `\addvspace{1\baselineskip}` before every song (single-column).
+- A column's first title therefore has no space above it; `ChapterEmitter` subtracts that planned line when
+  computing the end-of-column `\vspace` correction, so the columns still end together.
+- `Song.Create` drops leading and trailing blank lines from the text (the song file is not rewritten).
+
+Checked by compiling the `vibe-test` chapter with LuaLaTeX: one line between every pair of songs in both columns.
+Requirements FR-1.12.17 and specification §4.3 now describe the emitted spacing instead of `\titlespacing`.
+
+**A-13 follow-up (long lines).** A 43-character line ("En herres svettning e mera våldsam å ymnig,", 261.9pt) did not fit the
+259.05pt column, so LaTeX wrapped it itself and stretched the spaces of the first half. The widest per-character width
+of the lines measured is 6.18pt, so `LayoutDefaults` now uses 6.2pt (column width 41 instead of 43), and the
+minipages (and the single-column body, grouped) use `\raggedright`. `specification.md` §4.1 now says 41.
+
+**A-13 follow-up (existing documents: doubled spacing, empty page).** A document's main `.tex` is written when the
+document is created and is not updated afterwards, so documents created before A-13 keep the old
+`\titlespacing ... {\baselineskip}`. There the space before a title was added twice (by titlesec and by the emitted
+`\vspace`), the columns grew past the page, and LaTeX produced an empty page. Every chapter file now starts with
+`\titlespacing*{\paragraph}{0pt}{0pt}{0pt}`, so the output is correct whichever template version the document has.
+
+**A-13 follow-up (`\raggedright` and blank lines).** Under `\raggedright`, `\\` is redefined so that it ends the
+paragraph; a `\\` on a line with nothing before it (a blank lyric line between verses) then fails with
+"LaTeX Error: There's no line here to end". Blank lyric lines are therefore emitted as `\mbox{}` followed by the
+line break (`ChapterEmitter.LyricLatex`), in both layout modes.
+
+**Tests (A-13).** Emitter tests: space before each title except the first in a column (multi-column), `\addvspace`
+(single-column), blank lines around the lyrics dropped, blank lyric lines as `\mbox{}`; `LayoutDefaultsTests`: column
+width 41 and the new `\titlespacing`; `ColumnFillerTests` helper adjusted for the trimming. Not covered by a test: the
+`\titlespacing` line at the start of a chapter file and the `\raggedright` groups (checked by compiling `vibe-test`).

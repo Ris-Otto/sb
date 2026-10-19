@@ -36,24 +36,27 @@ public static class ChapterEmitter
     public static string RenderMultiColumn(string chapterTitle, IReadOnlyList<Page> pages, int columnWidth)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"\\chapter*{{{LaTeXText.Escape(chapterTitle)}}}");
+        AppendChapterHeading(sb, chapterTitle);
 
         foreach (Page page in pages)
         {
-            VSpaceCorrection correction = VerticalAlignment.Compute(page.Column1Lines, page.Column2Lines);
+            // The planned line count of a column that starts with a title includes the line of space
+            // before that title, which is not rendered at the top of a column (see AppendColumn).
+            VSpaceCorrection correction = VerticalAlignment.Compute(
+                page.Column1Lines - LeadingSpaceLines(page.Column1),
+                page.Column2Lines - LeadingSpaceLines(page.Column2));
 
             // [t] top-aligns both minipages, so they already start at the same line (FR-1.2.7); the
-            // vspace correction below is what makes them also end at the same line.
-            sb.AppendLine($"\\noindent\\begin{{minipage}}[t]{{{MinipageWidth}}}");
-            foreach (SongFragment fragment in page.Column1)
-                AppendFragment(sb, fragment, columnWidth);
+            // vspace correction below is what makes them also end at the same line. \raggedright keeps
+            // a line that LaTeX still has to wrap from having its spaces stretched to the column width.
+            sb.AppendLine($"\\noindent\\begin{{minipage}}[t]{{{MinipageWidth}}}\\raggedright");
+            AppendColumn(sb, page.Column1, columnWidth);
             if (correction.Column1VSpace > 0)
                 sb.AppendLine($"\\vspace{{{correction.Column1VSpace}\\baselineskip}}");
             sb.AppendLine("\\end{minipage}%");
             sb.AppendLine("\\hfill");
-            sb.AppendLine($"\\begin{{minipage}}[t]{{{MinipageWidth}}}");
-            foreach (SongFragment fragment in page.Column2)
-                AppendFragment(sb, fragment, columnWidth);
+            sb.AppendLine($"\\begin{{minipage}}[t]{{{MinipageWidth}}}\\raggedright");
+            AppendColumn(sb, page.Column2, columnWidth);
             if (correction.Column2VSpace > 0)
                 sb.AppendLine($"\\vspace{{{correction.Column2VSpace}\\baselineskip}}");
             sb.AppendLine("\\end{minipage}");
@@ -66,10 +69,17 @@ public static class ChapterEmitter
     public static string RenderSingleColumn(string chapterTitle, IReadOnlyList<Song> songs)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"\\chapter*{{{LaTeXText.Escape(chapterTitle)}}}");
+        AppendChapterHeading(sb, chapterTitle);
+
+        // Grouped, so \raggedright does not leak into the chapters that follow.
+        sb.AppendLine("\\begingroup\\raggedright");
 
         foreach (Song song in songs)
         {
+            // titlesec's spacing is zeroed (see AppendChapterHeading), so the space before the title is added
+            // here; \addvspace merges with the chapter heading's own space and vanishes at a page top.
+            sb.AppendLine($"\\addvspace{{{SongLayout.TitleSpacingLines}\\baselineskip}}");
+
             // LaTeX decides where pages break here, so SB can't plan around it as it does in multi-column
             // mode. What it can do is forbid a break between the song's header and its first paragraph
             // (`\\*` is a line break that doesn't allow a page break after it), so a title is never left
@@ -79,14 +89,20 @@ public static class ChapterEmitter
             int lyricLinesKept = Math.Clamp(firstParagraph, 1, MaxLyricLinesKeptWithHeader);
 
             List<string> lines = HeaderLatex(song).ToList();
-            lines.AddRange(song.Text.Select(LaTeXText.Escape));
+            lines.AddRange(song.Text.Select(LyricLatex));
             int keptTogether = lines.Count - song.Text.Count + Math.Min(lyricLinesKept, song.Text.Count);
 
             AppendLines(sb, lines, keptTogether);
         }
 
+        sb.AppendLine("\\par\\endgroup");
         return sb.ToString();
     }
+
+    /// <summary>One lyric line. A blank one is an <c>\mbox{}</c>: under <c>\raggedright</c>, <c>\\</c> ends the
+    /// paragraph, so a <c>\\</c> with nothing in front of it fails with "There's no line here to end".</summary>
+    private static string LyricLatex(string line) =>
+        string.IsNullOrWhiteSpace(line) ? "\\mbox{}" : LaTeXText.Escape(line);
 
     /// <summary>The header's lines, without their line-break terminators: <c>N. Title</c>, then the
     /// <c>Mel:</c>/<c>Text:</c> lines when present (FR-1.12.7, FR-1.12.11–15). <c>\paragraph*</c> is a
@@ -113,6 +129,33 @@ public static class ChapterEmitter
         }
     }
 
+    /// <summary>The chapter heading, preceded by the zeroing of titlesec's space before a song title. The
+    /// template already does that, but a document created from an earlier template keeps its old main
+    /// <c>.tex</c>, where the space would be added a second time on top of the one emitted here.</summary>
+    private static void AppendChapterHeading(StringBuilder sb, string chapterTitle)
+    {
+        sb.AppendLine("\\titlespacing*{\\paragraph}{0pt}{0pt}{0pt}");
+        sb.AppendLine($"\\chapter*{{{LaTeXText.Escape(chapterTitle)}}}");
+    }
+
+    /// <summary>Writes a column's fragments. The line of space before a title (<see cref="SongLayout.TitleSpacingLines"/>)
+    /// is an explicit <c>\vspace</c> rather than a <c>\titlespacing</c> in the template: titlesec does not
+    /// apply it reliably inside a minipage, which left some songs directly after the previous one. The first
+    /// fragment of a column gets none, since a column's first line sits at the top.</summary>
+    private static void AppendColumn(StringBuilder sb, IReadOnlyList<SongFragment> fragments, int columnWidth)
+    {
+        for (int i = 0; i < fragments.Count; i++)
+        {
+            if (i > 0 && fragments[i].IncludesTitle)
+                sb.AppendLine($"\\vspace{{{SongLayout.TitleSpacingLines}\\baselineskip}}");
+            AppendFragment(sb, fragments[i], columnWidth);
+        }
+    }
+
+    /// <summary>The planned lines of space before a column's first title that <see cref="AppendColumn"/> leaves out.</summary>
+    private static int LeadingSpaceLines(IReadOnlyList<SongFragment> fragments) =>
+        fragments.Count > 0 && fragments[0].IncludesTitle ? SongLayout.TitleSpacingLines : 0;
+
     private static void AppendFragment(StringBuilder sb, SongFragment fragment, int columnWidth)
     {
         var lines = new List<string>();
@@ -126,7 +169,7 @@ public static class ChapterEmitter
         foreach (string line in fragment.Lines)
         {
             foreach (string wrapped in LineWrapper.Wrap(line, columnWidth))
-                lines.Add(LaTeXText.Escape(wrapped));
+                lines.Add(LyricLatex(wrapped));
         }
 
         if (fragment.ContinuesOnNextPage)

@@ -247,7 +247,7 @@ and the line budget when a song is split across columns/pages, so that the plann
 A continuation fragment re-renders no header lines; it has a leading notice line, and a trailing one if it breaks 
 off again. (Addenda A-5, A-12.)
 - FR-1.12.17: A song's height shall be a whole number of lines, so that the line-based planning (FR-1.2.8, FR-1.3) is 
-exact: the template shall put exactly one line of space before each song's `\paragraph*` title (`\titlespacing`), and 
+exact: the emitted text shall put exactly one line of space (`\vspace`) before each song's `\paragraph*` title, and 
 the emitted text shall have a line break between lines but none after the last line of a fragment, since a break at 
 the end of a paragraph makes LaTeX add an empty line that the plan does not include. (Addendum A-12.)
 - FR-1.12.18: The number of characters and of lines that fit a column shall be derived from the template's page 
@@ -255,6 +255,11 @@ geometry (FR-1.12.4), not guessed: a column's width in characters is what the wi
 height in lines is taken from the text height and the leading, with one line of safety for text that wraps 
 unexpectedly. The first page of a chapter has fewer lines than the others because the `\chapter*` heading takes room, 
 and the paginators shall plan it with its own, smaller line count. (Addendum A-12.)
+- FR-1.12.19: Lyrics shall be set ragged right (`\raggedright`), so a line that LaTeX still has to wrap is not 
+stretched to the column width; blank lyric lines shall be emitted as `\mbox{}` followed by the line break, and blank 
+lines at the start or end of a song's text shall be ignored. Every chapter file shall itself set the space before a 
+song title to zero (`\titlespacing`), so documents created from an older template are laid out correctly. 
+(Addendum A-13.)
 - FR-1.12.16: In single-column mode, where LaTeX decides the page breaks, SB shall not allow a page break between a 
 song's header and the start of its lyrics: the header lines and the song's first paragraph (FR-1.3.17), up to 10 lyric 
 lines, are joined with non-breaking line ends (`\\*`), so a title is never left alone at the bottom of a page. The 

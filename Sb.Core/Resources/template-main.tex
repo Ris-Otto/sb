@@ -11,9 +11,10 @@
 \makeatletter
 \renewcommand\normalsize{\@setfontsize\normalsize{12pt}{14.4pt}}
 \makeatother
-% A song's \paragraph* title is preceded by exactly one line of space, so that a song's height is a
-% whole number of lines (SB plans the page layout in lines: see LayoutDefaults in Sb.Core).
-\titlespacing*{\paragraph}{0pt}{\baselineskip}{0pt}
+% The line of space before a song's \paragraph* title is emitted by SB as an explicit \vspace (titlesec
+% does not apply \titlespacing reliably inside a minipage), so that a song's height is a whole number of
+% lines (SB plans the page layout in lines: see LayoutDefaults in Sb.Core).
+\titlespacing*{\paragraph}{0pt}{0pt}{0pt}
 \setlength{\parindent}{0pt}
 
 \begin{document}

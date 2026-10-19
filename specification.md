@@ -362,7 +362,7 @@ are found in PageMetrics.png. The body font is Lexend at 12pt on 14.4pt leading.
 
 SB plans the layout in whole lines and characters, and the numbers come from this geometry (A-12): a column holds 54
 lines (53 planned, one line of safety), the first page of a chapter 44 (43 planned) because the `\chapter*` heading
-takes 135.7pt, and a line holds 43 characters before SB wraps it. They were measured by compiling the template with
+takes 135.7pt, and a line holds 41 characters before SB wraps it. They were measured by compiling the template with
 LuaLaTeX (see `LayoutDefaults` in `Sb.Core`), and have to be measured again if the page geometry or the font changes;
 the unit tests check that the template still has the geometry they were measured from. A chapter title that takes more
 than one line leaves less room on that first page than planned.
@@ -388,7 +388,7 @@ separate lines, in this order, all above the lyrics:
 
 The header lines count towards the song's height when filling columns and pages (§2.1, §2.2), and
 only the first fragment of a split song carries the header (see `addendums.md`, A-1). The header also includes the
-one line of space the template puts before every title (`\titlespacing*{\paragraph}{0pt}{\baselineskip}{0pt}`), so a
+one line of space SB emits before every title (`\vspace`, see A-13), so a
 song's height is title + space + melody/writer lines + lyrics, in whole lines (A-12).
 
 Within a fragment the lines are separated by `\\`, but the last line has no `\\` after it: a line break at the end

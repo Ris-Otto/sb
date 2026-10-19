@@ -27,8 +27,8 @@ public class LayoutDefaultsTests
     [Test]
     public void ColumnWidth_IsTheCharacterCountTheMeasuredLyricsFit()
     {
-        // 259.05pt column / 5.96pt widest measured per-character width = 43.5 characters.
-        Assert.That(LayoutDefaults.ColumnWidth, Is.EqualTo(43));
+        // 259.05pt column / 6.2pt widest measured per-character width = 41.8 characters.
+        Assert.That(LayoutDefaults.ColumnWidth, Is.EqualTo(41));
     }
 
     [Test]
@@ -38,6 +38,6 @@ public class LayoutDefaultsTests
 
         Assert.That(template, Does.Contain("a4paper, margin=0.4in, bmargin=0.65in, tmargin=0.3in"));
         Assert.That(template, Does.Contain("\\renewcommand\\normalsize{\\@setfontsize\\normalsize{12pt}{14.4pt}}"));
-        Assert.That(template, Does.Contain("\\titlespacing*{\\paragraph}{0pt}{\\baselineskip}{0pt}"));
+        Assert.That(template, Does.Contain("\\titlespacing*{\\paragraph}{0pt}{0pt}{0pt}"));
     }
 }

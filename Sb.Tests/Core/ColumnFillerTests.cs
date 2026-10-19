@@ -12,7 +12,7 @@ public class ColumnFillerTests
 
     private static SongFragment Make(string title, int textLines, int number = 1)
     {
-        Song song = Song.Create(title, Enumerable.Range(1, textLines - 1).Select(i => i == 2 ? "" : $"line {i}").ToArray(), number).Value;
+        Song song = Song.Create(title, Enumerable.Range(1, textLines - 1).Select(i => i == 2 && i < textLines - 1 ? "" : $"line {i}").ToArray(), number).Value;
         return SongFragment.Whole(song, ColumnWidth);
     }
 
